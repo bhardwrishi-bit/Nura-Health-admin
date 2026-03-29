@@ -1,7 +1,7 @@
 # Nura Health Admin Dashboard
 
 ## Problem Statement
-Host a standalone admin dashboard HTML file as-is without modification, replacing the existing dashboard. Then integrate with Supabase as live data source.
+Host a standalone admin dashboard HTML file as-is without modification, replacing the existing dashboard. Then integrate with Supabase as live data source with authentication.
 
 ## What's Been Implemented
 - **Date**: January 2026
@@ -14,6 +14,13 @@ Host a standalone admin dashboard HTML file as-is without modification, replacin
   - Fallback data mechanism when tables are empty or queries fail
   - Loading states with skeleton rows and pulsing animation
   - Connection status indicator in topbar
+- **Supabase Auth** (March 2026):
+  - Email/password authentication via Supabase Auth
+  - Login screen with branding
+  - Session persistence (stay logged in)
+  - Sign out functionality
+  - Password reset via email
+  - Dynamic user info in sidebar and greeting
 
 ## Architecture
 - Static HTML file served from `/app/frontend/public/admin-dashboard.html`
@@ -21,6 +28,20 @@ Host a standalone admin dashboard HTML file as-is without modification, replacin
 - Self-contained CSS and JavaScript
 - Supabase JS SDK v2 loaded via CDN
 - All data fetched via Supabase REST API
+- Authentication via Supabase Auth
+
+## Setup Instructions
+
+### Create Admin User in Supabase:
+1. Go to Supabase Dashboard → Authentication → Users
+2. Click "Add User" → "Create new user"
+3. Enter email and password for your admin account
+4. The user will be able to log in immediately
+
+### Alternative - Enable Email Signup:
+1. Go to Supabase Dashboard → Authentication → Providers
+2. Enable "Email" provider
+3. Users can sign up directly from the login page (add signup form if needed)
 
 ## Supabase Tables Expected
 - `collectors` - id, first_name, last_name, email, phone, employment_type, status, joined_date
@@ -31,6 +52,7 @@ Host a standalone admin dashboard HTML file as-is without modification, replacin
 - `v_document_alerts` (view) - collector_name, document_type, alert_type, message
 
 ## Core Features
+- Password-protected admin dashboard
 - Dashboard overview with live KPIs (from Supabase)
 - Collector profiles with document status tracking
 - Availability grid view with week navigation
