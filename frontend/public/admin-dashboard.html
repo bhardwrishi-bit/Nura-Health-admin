@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Nura Health — Admin Dashboard</title>
   <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -854,6 +855,62 @@
     .empty-icon { font-size: 40px; margin-bottom: 12px; }
     .empty-title { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
 
+    /* ══════════════════════════════════════
+       LOADING STATES
+    ══════════════════════════════════════ */
+    .loading { animation: pulse 1.5s ease-in-out infinite; }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .skeleton {
+      background: var(--card3);
+      border-radius: 8px;
+      height: 20px;
+      margin: 8px 0;
+    }
+
+    .skeleton-row {
+      display: flex;
+      gap: 16px;
+      padding: 13px 16px;
+      border-bottom: 1px solid var(--border2);
+    }
+
+    .skeleton-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--card3);
+      flex-shrink: 0;
+    }
+
+    .skeleton-text {
+      flex: 1;
+      height: 16px;
+      background: var(--card3);
+      border-radius: 4px;
+    }
+
+    .skeleton-text.short { width: 60%; }
+
+    /* Connection status pill */
+    .connection-pill {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(244,67,54,0.15);
+      color: var(--danger);
+      border: 1px solid rgba(244,67,54,0.3);
+    }
+
+    .connection-pill.show { display: flex; }
+
     /* scrollbar */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
@@ -884,20 +941,20 @@
     </div>
     <div class="nav-link" onclick="showPage('collectors')">
       <span class="nav-icon">&#128101;</span> Collectors
-      <span class="nav-badge mint">8</span>
+      <span class="nav-badge mint" id="collectors-badge">8</span>
     </div>
     <div class="nav-link" onclick="showPage('availability')">
       <span class="nav-icon">&#128197;</span> Availability
     </div>
     <div class="nav-link" onclick="showPage('leave')">
       <span class="nav-icon">&#127958;</span> Leave Requests
-      <span class="nav-badge orange">3</span>
+      <span class="nav-badge orange" id="leave-badge">3</span>
     </div>
 
     <div class="nav-section-label">Compliance</div>
     <div class="nav-link" onclick="showToast('Documents module coming in Phase 2')">
       <span class="nav-icon">&#128203;</span> Documents
-      <span class="nav-badge">2</span>
+      <span class="nav-badge" id="docs-badge">2</span>
     </div>
     <div class="nav-link" onclick="showToast('Analytics module coming in Phase 3')">
       <span class="nav-icon">&#128202;</span> Analytics
@@ -936,10 +993,11 @@
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title">Good morning, Rishi &#128075;</div>
-        <div class="page-subtitle">Sunday, 29 March 2026 · Brisbane QLD</div>
+        <div class="page-subtitle" id="overview-subtitle">Sunday, 29 March 2026 · Brisbane QLD</div>
       </div>
       <div class="topbar-right">
-        <button class="topbar-btn" onclick="showToast('Refreshing live data...')">&#128260; Refresh</button>
+        <div class="connection-pill" id="connection-status">&#9888; Live data unavailable</div>
+        <button class="topbar-btn" onclick="refreshOverview()">&#128260; Refresh</button>
         <button class="topbar-btn primary" onclick="showToast('Job scheduler coming in Phase 3')">+ New Job</button>
       </div>
     </div>
@@ -947,28 +1005,28 @@
 
       <!-- Stats -->
       <div class="stats-grid">
-        <div class="stat-card">
+        <div class="stat-card" id="stat-active-runs">
           <div class="stat-icon">&#129656;</div>
           <div class="stat-label">Active Runs Today</div>
-          <div class="stat-value">3</div>
+          <div class="stat-value" id="active-runs-value">3</div>
           <div class="stat-sub"><span class="up">&#8593; 1</span> vs yesterday</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="stat-collections">
           <div class="stat-icon">&#9989;</div>
           <div class="stat-label">Collections Complete</div>
-          <div class="stat-value">11</div>
-          <div class="stat-sub">of <strong>18</strong> scheduled today</div>
+          <div class="stat-value" id="collections-value">11</div>
+          <div class="stat-sub">of <strong id="scheduled-today">18</strong> scheduled today</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="stat-collectors">
           <div class="stat-icon">&#128101;</div>
           <div class="stat-label">Active Collectors</div>
-          <div class="stat-value">8</div>
-          <div class="stat-sub"><span class="up">3 available</span> this week</div>
+          <div class="stat-value" id="active-collectors-value">8</div>
+          <div class="stat-sub"><span class="up" id="available-collectors">3 available</span> this week</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" id="stat-earnings">
           <div class="stat-icon">&#128176;</div>
           <div class="stat-label">Earnings This Week</div>
-          <div class="stat-value">$4.2k</div>
+          <div class="stat-value" id="earnings-value">$4.2k</div>
           <div class="stat-sub"><span class="up">&#8593; 12%</span> vs last week</div>
         </div>
       </div>
@@ -988,7 +1046,7 @@
                   <th>Status</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="live-runs-body">
                 <tr>
                   <td>
                     <div class="collector-cell">
@@ -1005,38 +1063,6 @@
                   </td>
                   <td><span class="badge badge-orange">In Progress</span></td>
                 </tr>
-                <tr>
-                  <td>
-                    <div class="collector-cell">
-                      <div class="collector-avatar">JK</div>
-                      <div><div class="collector-name">Jaspreet Khurana</div><div class="collector-sub">Contractor</div></div>
-                    </div>
-                  </td>
-                  <td>Stop 2 — New Farm</td>
-                  <td>
-                    <div class="progress-bar-wrap">
-                      <div class="progress-bar"><div class="progress-fill" style="width:40%"></div></div>
-                      <span class="progress-label">2/5</span>
-                    </div>
-                  </td>
-                  <td><span class="badge badge-orange">In Progress</span></td>
-                </tr>
-                <tr>
-                  <td>
-                    <div class="collector-cell">
-                      <div class="collector-avatar">KD</div>
-                      <div><div class="collector-name">Kel Downes</div><div class="collector-sub">Contractor</div></div>
-                    </div>
-                  </td>
-                  <td>Drop-off — Bowen Hills</td>
-                  <td>
-                    <div class="progress-bar-wrap">
-                      <div class="progress-bar"><div class="progress-fill" style="width:100%"></div></div>
-                      <span class="progress-label">4/4</span>
-                    </div>
-                  </td>
-                  <td><span class="badge badge-mint">Dropping Off</span></td>
-                </tr>
               </tbody>
             </table>
           </div>
@@ -1044,39 +1070,14 @@
 
         <!-- Alerts -->
         <div class="card" style="padding: 20px;">
-          <div class="section-title">Alerts <span class="see-all">Clear all</span></div>
-          <div class="alert-list">
+          <div class="section-title">Alerts <span class="see-all" onclick="clearAlerts()">Clear all</span></div>
+          <div class="alert-list" id="alerts-list">
             <div class="alert-item">
               <div class="alert-dot red"></div>
               <div>
-                <div class="alert-text">Sarah Chen — Public Liability Insurance expired</div>
-                <div class="alert-sub">Expired 10 days ago · Cannot assign new jobs</div>
+                <div class="alert-text">Loading alerts...</div>
+                <div class="alert-sub">Please wait</div>
               </div>
-              <div class="alert-action" onclick="showPage('collectors')">Review &#8594;</div>
-            </div>
-            <div class="alert-item">
-              <div class="alert-dot orange"></div>
-              <div>
-                <div class="alert-text">Sarah Chen — WWCC expiring in 25 days</div>
-                <div class="alert-sub">Expires 23 Apr 2026</div>
-              </div>
-              <div class="alert-action" onclick="showPage('collectors')">Review &#8594;</div>
-            </div>
-            <div class="alert-item">
-              <div class="alert-dot orange"></div>
-              <div>
-                <div class="alert-text">3 leave requests pending approval</div>
-                <div class="alert-sub">Oldest submitted 4 days ago</div>
-              </div>
-              <div class="alert-action" onclick="showPage('leave')">Review &#8594;</div>
-            </div>
-            <div class="alert-item">
-              <div class="alert-dot orange"></div>
-              <div>
-                <div class="alert-text">2 collectors haven't submitted Week 2 availability</div>
-                <div class="alert-sub">Affects booking capacity for 31 Mar – 6 Apr</div>
-              </div>
-              <div class="alert-action" onclick="showPage('availability')">View &#8594;</div>
             </div>
           </div>
         </div>
@@ -1090,46 +1091,16 @@
             <thead>
               <tr>
                 <th>Collector</th>
-                <th>Mon 30</th>
-                <th>Tue 31</th>
-                <th>Wed 1</th>
-                <th>Thu 2</th>
-                <th>Fri 3</th>
-                <th>Sat 4</th>
-                <th>Sun 5</th>
+                <th id="day-col-1">Mon 30</th>
+                <th id="day-col-2">Tue 31</th>
+                <th id="day-col-3">Wed 1</th>
+                <th id="day-col-4">Thu 2</th>
+                <th id="day-col-5">Fri 3</th>
+                <th id="day-col-6">Sat 4</th>
+                <th id="day-col-7">Sun 5</th>
               </tr>
             </thead>
-            <tbody>
-              <tr>
-                <td><div class="collector-cell"><div class="collector-avatar" style="width:24px;height:24px;font-size:10px">SC</div>Sarah Chen</div></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-mint">AM</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-orange">PM</span></td>
-                <td><span class="badge badge-red">Off</span></td>
-                <td><span class="badge badge-red">Off</span></td>
-              </tr>
-              <tr>
-                <td><div class="collector-cell"><div class="collector-avatar" style="width:24px;height:24px;font-size:10px">JK</div>Jaspreet Khurana</div></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-mint">AM</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-red">Off</span></td>
-                <td><span class="badge badge-red">Off</span></td>
-              </tr>
-              <tr>
-                <td><div class="collector-cell"><div class="collector-avatar" style="width:24px;height:24px;font-size:10px">KD</div>Kel Downes</div></td>
-                <td><span class="badge badge-mint">AM</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-orange">PM</span></td>
-                <td><span class="badge badge-green">Full</span></td>
-                <td><span class="badge badge-mint">AM</span></td>
-                <td><span class="badge badge-red">Off</span></td>
-              </tr>
+            <tbody id="availability-snapshot-body">
             </tbody>
           </table>
         </div>
@@ -1143,7 +1114,7 @@
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title">Collectors</div>
-        <div class="page-subtitle">8 active collectors · 2 document alerts</div>
+        <div class="page-subtitle" id="collectors-subtitle">8 active collectors · 2 document alerts</div>
       </div>
       <div class="topbar-right">
         <button class="topbar-btn primary" onclick="showToast('Invite flow coming soon')">+ Invite Collector</button>
@@ -1202,16 +1173,16 @@
     <div class="topbar">
       <div class="topbar-left">
         <div class="page-title">Leave Requests</div>
-        <div class="page-subtitle">3 pending approval · Employees only</div>
+        <div class="page-subtitle" id="leave-subtitle">3 pending approval · Employees only</div>
       </div>
     </div>
     <div style="padding: 28px 32px;">
 
       <div class="leave-summary-row">
-        <div class="leave-stat"><div class="leave-stat-num">3</div><div class="leave-stat-label">Pending</div></div>
-        <div class="leave-stat"><div class="leave-stat-num" style="color:var(--success)">7</div><div class="leave-stat-label">Approved YTD</div></div>
-        <div class="leave-stat"><div class="leave-stat-num" style="color:var(--danger)">1</div><div class="leave-stat-label">Declined YTD</div></div>
-        <div class="leave-stat"><div class="leave-stat-num">24</div><div class="leave-stat-label">Total Days Taken</div></div>
+        <div class="leave-stat"><div class="leave-stat-num" id="leave-pending-count">3</div><div class="leave-stat-label">Pending</div></div>
+        <div class="leave-stat"><div class="leave-stat-num" style="color:var(--success)" id="leave-approved-count">7</div><div class="leave-stat-label">Approved YTD</div></div>
+        <div class="leave-stat"><div class="leave-stat-num" style="color:var(--danger)" id="leave-declined-count">1</div><div class="leave-stat-label">Declined YTD</div></div>
+        <div class="leave-stat"><div class="leave-stat-num" id="leave-total-days">24</div><div class="leave-stat-label">Total Days Taken</div></div>
       </div>
 
       <div class="card" style="overflow:hidden;">
@@ -1261,7 +1232,56 @@
 
 <script>
 // ══════════════════════════════════════════════
-// DATA
+// SUPABASE INITIALIZATION
+// ══════════════════════════════════════════════
+const SUPABASE_URL = 'https://yxoqvzypgvkdabqnwacs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4b3F2enlwZ3ZrZGFicW53YWNzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ3NzAzODUsImV4cCI6MjA5MDM0NjM4NX0.ilvfIOE-xLa_UnECHBr1SubljFTDHKqP_Ubbf00fJXQ';
+
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+let isSupabaseConnected = false;
+
+// ══════════════════════════════════════════════
+// FALLBACK DATA (used when Supabase is unavailable)
+// ══════════════════════════════════════════════
+const fallbackCollectors = [
+  { id: 'c1', initials: 'SC', name: 'Sarah Chen',        type: 'contractor', status: 'active', phone: '+61 412 345 678', email: 'sarah.chen@nurahealth.com.au', joined: '12 Jan 2026', runsTotal: 48, earningsMonth: 2734, docs: ['valid','expiring','valid','valid','expired','valid'] },
+  { id: 'c2', initials: 'JK', name: 'Jaspreet Khurana',  type: 'contractor', status: 'active', phone: '+61 423 456 789', email: 'j.khurana@nurahealth.com.au',   joined: '5 Feb 2026',  runsTotal: 31, earningsMonth: 1890, docs: ['valid','valid','valid','valid','valid','valid'] },
+  { id: 'c3', initials: 'KD', name: 'Kel Downes',        type: 'contractor', status: 'active', phone: '+61 434 567 890', email: 'k.downes@nurahealth.com.au',     joined: '18 Feb 2026', runsTotal: 24, earningsMonth: 1420, docs: ['valid','valid','valid','valid','valid','valid'] },
+  { id: 'c4', initials: 'MT', name: 'Michelle Torres',   type: 'employee',   status: 'active', phone: '+61 445 678 901', email: 'm.torres@nurahealth.com.au',     joined: '1 Jan 2026',  runsTotal: 62, earningsMonth: 3200, docs: ['valid','valid','valid','valid',null,null] },
+  { id: 'c5', initials: 'AP', name: 'Alex Patel',        type: 'employee',   status: 'active', phone: '+61 456 789 012', email: 'a.patel@nurahealth.com.au',      joined: '15 Jan 2026', runsTotal: 55, earningsMonth: 2900, docs: ['valid','valid','expiring','valid',null,null] },
+  { id: 'c6', initials: 'RN', name: 'Rachel Nguyen',     type: 'contractor', status: 'active', phone: '+61 467 890 123', email: 'r.nguyen@nurahealth.com.au',     joined: '20 Feb 2026', runsTotal: 18, earningsMonth: 960,  docs: ['valid','valid','valid','expiring','valid','valid'] },
+  { id: 'c7', initials: 'BO', name: "Ben O'Brien",      type: 'contractor', status: 'active', phone: '+61 478 901 234', email: 'b.obrien@nurahealth.com.au',     joined: '3 Mar 2026',  runsTotal: 12, earningsMonth: 640,  docs: ['valid','valid','valid','valid','valid','valid'] },
+  { id: 'c8', initials: 'LW', name: 'Lisa Wang',         type: 'employee',   status: 'inactive', phone: '+61 489 012 345', email: 'l.wang@nurahealth.com.au',    joined: '10 Jan 2026', runsTotal: 40, earningsMonth: 0,    docs: ['valid','valid','valid','valid',null,null] },
+];
+
+const fallbackAvailData = {
+  'c1': ['full','am','full','full','pm','off','off',  'full','full','off','am','full','off','off',  'am','full','full','pm','full','off','off',  'full','off','am','full','full','off','off'],
+  'c2': ['full','full','am','full','full','off','off', 'full','am','full','full','off','off','off',  'full','full','pm','full','full','off','off',  'am','full','full','off','full','off','off'],
+  'c3': ['am','full','full','pm','full','am','off',   'full','full','full','am','pm','off','off',   'pm','full','full','full','am','off','off',   'full','am','full','full','off','off','off'],
+  'c4': ['full','full','full','full','full','off','off','full','full','full','full','full','off','off','full','full','full','full','full','off','off','full','full','full','full','full','off','off'],
+  'c5': ['full','pm','full','full','am','off','off',  'full','full','am','full','full','off','off',  'am','full','full','full','pm','off','off',  null,null,null,null,null,null,null],
+  'c6': ['am','full','full','am','full','off','off',  'full','am','full','full','full','off','off',  'full','full','am','pm','full','off','off',  'full','full','full','am','full','off','off'],
+  'c7': [null,null,null,null,null,null,null,         'full','full','full','full','full','off','off','full','am','full','full','full','off','off',  'am','full','pm','full','full','off','off'],
+  'c8': ['off','off','off','off','off','off','off',  'off','off','off','off','off','off','off',    'off','off','off','off','off','off','off',   'off','off','off','off','off','off','off'],
+};
+
+const fallbackLeaveRequests = [
+  { id: 'l1', collectorId: 'c4', collector: 'Michelle Torres', type: 'Annual Leave',   start: '14 Apr 2026', end: '18 Apr 2026', days: 5, status: 'pending',  submitted: '25 Mar 2026' },
+  { id: 'l2', collectorId: 'c5', collector: 'Alex Patel',      type: 'Sick Leave',     start: '2 Apr 2026',  end: '3 Apr 2026',  days: 2, status: 'pending',  submitted: '28 Mar 2026' },
+  { id: 'l3', collectorId: 'c8', collector: 'Lisa Wang',       type: 'Personal Leave', start: '7 Apr 2026',  end: '7 Apr 2026',  days: 1, status: 'pending',  submitted: '29 Mar 2026' },
+  { id: 'l4', collectorId: 'c4', collector: 'Michelle Torres', type: 'Annual Leave',   start: '23 Dec 2025', end: '24 Dec 2025', days: 2, status: 'approved', submitted: '1 Dec 2025' },
+  { id: 'l5', collectorId: 'c5', collector: 'Alex Patel',      type: 'Annual Leave',   start: '26 Jan 2026', end: '26 Jan 2026', days: 1, status: 'approved', submitted: '10 Jan 2026' },
+  { id: 'l6', collectorId: 'c8', collector: 'Lisa Wang',       type: 'Sick Leave',     start: '14 Feb 2026', end: '17 Feb 2026', days: 2, status: 'approved', submitted: '14 Feb 2026' },
+  { id: 'l7', collectorId: 'c4', collector: 'Michelle Torres', type: 'Personal Leave', start: '5 Mar 2026',  end: '5 Mar 2026',  days: 1, status: 'declined', submitted: '2 Mar 2026' },
+];
+
+// Live data arrays (will be populated from Supabase)
+let collectors = [...fallbackCollectors];
+let availData = {...fallbackAvailData};
+let leaveRequests = [...fallbackLeaveRequests];
+
+// ══════════════════════════════════════════════
+// UTILITY FUNCTIONS
 // ══════════════════════════════════════════════
 const today = new Date();
 
@@ -1280,38 +1300,565 @@ function getMonday(d) {
   r.setHours(0,0,0,0);
   return r;
 }
+function formatDateForDB(d) {
+  return d.toISOString().split('T')[0];
+}
+function getInitials(firstName, lastName) {
+  return `${(firstName || '')[0] || ''}${(lastName || '')[0] || ''}`.toUpperCase();
+}
 
-const collectors = [
-  { id: 'c1', initials: 'SC', name: 'Sarah Chen',        type: 'contractor', status: 'active', phone: '+61 412 345 678', email: 'sarah.chen@nurahealth.com.au', joined: '12 Jan 2026', runsTotal: 48, earningsMonth: 2734, docs: ['valid','expiring','valid','valid','expired','valid'] },
-  { id: 'c2', initials: 'JK', name: 'Jaspreet Khurana',  type: 'contractor', status: 'active', phone: '+61 423 456 789', email: 'j.khurana@nurahealth.com.au',   joined: '5 Feb 2026',  runsTotal: 31, earningsMonth: 1890, docs: ['valid','valid','valid','valid','valid','valid'] },
-  { id: 'c3', initials: 'KD', name: 'Kel Downes',        type: 'contractor', status: 'active', phone: '+61 434 567 890', email: 'k.downes@nurahealth.com.au',     joined: '18 Feb 2026', runsTotal: 24, earningsMonth: 1420, docs: ['valid','valid','valid','valid','valid','valid'] },
-  { id: 'c4', initials: 'MT', name: 'Michelle Torres',   type: 'employee',   status: 'active', phone: '+61 445 678 901', email: 'm.torres@nurahealth.com.au',     joined: '1 Jan 2026',  runsTotal: 62, earningsMonth: 3200, docs: ['valid','valid','valid','valid',null,null] },
-  { id: 'c5', initials: 'AP', name: 'Alex Patel',        type: 'employee',   status: 'active', phone: '+61 456 789 012', email: 'a.patel@nurahealth.com.au',      joined: '15 Jan 2026', runsTotal: 55, earningsMonth: 2900, docs: ['valid','valid','expiring','valid',null,null] },
-  { id: 'c6', initials: 'RN', name: 'Rachel Nguyen',     type: 'contractor', status: 'active', phone: '+61 467 890 123', email: 'r.nguyen@nurahealth.com.au',     joined: '20 Feb 2026', runsTotal: 18, earningsMonth: 960,  docs: ['valid','valid','valid','expiring','valid','valid'] },
-  { id: 'c7', initials: 'BO', name: "Ben O'Brien",      type: 'contractor', status: 'active', phone: '+61 478 901 234', email: 'b.obrien@nurahealth.com.au',     joined: '3 Mar 2026',  runsTotal: 12, earningsMonth: 640,  docs: ['valid','valid','valid','valid','valid','valid'] },
-  { id: 'c8', initials: 'LW', name: 'Lisa Wang',         type: 'employee',   status: 'inactive', phone: '+61 489 012 345', email: 'l.wang@nurahealth.com.au',    joined: '10 Jan 2026', runsTotal: 40, earningsMonth: 0,    docs: ['valid','valid','valid','valid',null,null] },
-];
+function setLoading(elementId, isLoading) {
+  const el = document.getElementById(elementId);
+  if (el) {
+    if (isLoading) {
+      el.classList.add('loading');
+    } else {
+      el.classList.remove('loading');
+    }
+  }
+}
 
-const availData = {
-  'c1': ['full','am','full','full','pm','off','off',  'full','full','off','am','full','off','off',  'am','full','full','pm','full','off','off',  'full','off','am','full','full','off','off'],
-  'c2': ['full','full','am','full','full','off','off', 'full','am','full','full','off','off','off',  'full','full','pm','full','full','off','off',  'am','full','full','off','full','off','off'],
-  'c3': ['am','full','full','pm','full','am','off',   'full','full','full','am','pm','off','off',   'pm','full','full','full','am','off','off',   'full','am','full','full','off','off','off'],
-  'c4': ['full','full','full','full','full','off','off','full','full','full','full','full','off','off','full','full','full','full','full','off','off','full','full','full','full','full','off','off'],
-  'c5': ['full','pm','full','full','am','off','off',  'full','full','am','full','full','off','off',  'am','full','full','full','pm','off','off',  null,null,null,null,null,null,null],
-  'c6': ['am','full','full','am','full','off','off',  'full','am','full','full','full','off','off',  'full','full','am','pm','full','off','off',  'full','full','full','am','full','off','off'],
-  'c7': [null,null,null,null,null,null,null,         'full','full','full','full','full','off','off','full','am','full','full','full','off','off',  'am','full','pm','full','full','off','off'],
-  'c8': ['off','off','off','off','off','off','off',  'off','off','off','off','off','off','off',    'off','off','off','off','off','off','off',   'off','off','off','off','off','off','off'],
-};
+function showConnectionStatus(connected) {
+  const pill = document.getElementById('connection-status');
+  if (pill) {
+    pill.classList.toggle('show', !connected);
+  }
+  isSupabaseConnected = connected;
+}
 
-const leaveRequests = [
-  { id: 'l1', collectorId: 'c4', collector: 'Michelle Torres', type: 'Annual Leave',   start: '14 Apr 2026', end: '18 Apr 2026', days: 5, status: 'pending',  submitted: '25 Mar 2026' },
-  { id: 'l2', collectorId: 'c5', collector: 'Alex Patel',      type: 'Sick Leave',     start: '2 Apr 2026',  end: '3 Apr 2026',  days: 2, status: 'pending',  submitted: '28 Mar 2026' },
-  { id: 'l3', collectorId: 'c8', collector: 'Lisa Wang',       type: 'Personal Leave', start: '7 Apr 2026',  end: '7 Apr 2026',  days: 1, status: 'pending',  submitted: '29 Mar 2026' },
-  { id: 'l4', collectorId: 'c4', collector: 'Michelle Torres', type: 'Annual Leave',   start: '23 Dec 2025', end: '24 Dec 2025', days: 2, status: 'approved', submitted: '1 Dec 2025' },
-  { id: 'l5', collectorId: 'c5', collector: 'Alex Patel',      type: 'Annual Leave',   start: '26 Jan 2026', end: '26 Jan 2026', days: 1, status: 'approved', submitted: '10 Jan 2026' },
-  { id: 'l6', collectorId: 'c8', collector: 'Lisa Wang',       type: 'Sick Leave',     start: '14 Feb 2026', end: '17 Feb 2026', days: 2, status: 'approved', submitted: '14 Feb 2026' },
-  { id: 'l7', collectorId: 'c4', collector: 'Michelle Torres', type: 'Personal Leave', start: '5 Mar 2026',  end: '5 Mar 2026',  days: 1, status: 'declined', submitted: '2 Mar 2026' },
-];
+function renderSkeletonRows(count = 3) {
+  return Array(count).fill(0).map(() => `
+    <tr class="skeleton-row">
+      <td><div class="skeleton-avatar"></div></td>
+      <td><div class="skeleton-text"></div></td>
+      <td><div class="skeleton-text short"></div></td>
+      <td><div class="skeleton-text short"></div></td>
+    </tr>
+  `).join('');
+}
+
+// ══════════════════════════════════════════════
+// SUPABASE DATA FETCHING
+// ══════════════════════════════════════════════
+
+async function fetchOverviewStats() {
+  const todayStr = formatDateForDB(today);
+  
+  try {
+    setLoading('stat-active-runs', true);
+    setLoading('stat-collections', true);
+    setLoading('stat-collectors', true);
+
+    // Active runs today
+    const { data: activeRuns, error: runsError } = await supabaseClient
+      .from('jobs')
+      .select('id', { count: 'exact' })
+      .eq('status', 'in_progress')
+      .eq('scheduled_date', todayStr);
+    
+    if (!runsError && activeRuns !== null) {
+      document.getElementById('active-runs-value').textContent = activeRuns.length || 0;
+    }
+
+    // Collections complete today
+    const { data: completedStops, error: stopsError } = await supabaseClient
+      .from('patient_stops')
+      .select('id, jobs!inner(scheduled_date)')
+      .eq('status', 'completed')
+      .eq('jobs.scheduled_date', todayStr);
+    
+    if (!stopsError && completedStops !== null) {
+      document.getElementById('collections-value').textContent = completedStops.length || 0;
+    }
+
+    // Total scheduled today
+    const { data: scheduledStops, error: scheduledError } = await supabaseClient
+      .from('patient_stops')
+      .select('id, jobs!inner(scheduled_date)')
+      .eq('jobs.scheduled_date', todayStr);
+    
+    if (!scheduledError && scheduledStops !== null) {
+      document.getElementById('scheduled-today').textContent = scheduledStops.length || 0;
+    }
+
+    // Active collectors count
+    const { data: activeCollectors, error: collectorsError } = await supabaseClient
+      .from('collectors')
+      .select('id', { count: 'exact' })
+      .eq('status', 'active');
+    
+    if (!collectorsError && activeCollectors !== null) {
+      document.getElementById('active-collectors-value').textContent = activeCollectors.length || 0;
+      document.getElementById('collectors-badge').textContent = activeCollectors.length || 0;
+    }
+
+    showConnectionStatus(true);
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch overview stats:', err);
+    showConnectionStatus(false);
+  } finally {
+    setLoading('stat-active-runs', false);
+    setLoading('stat-collections', false);
+    setLoading('stat-collectors', false);
+  }
+}
+
+async function fetchLiveRuns() {
+  const tbody = document.getElementById('live-runs-body');
+  tbody.innerHTML = renderSkeletonRows(3);
+  
+  const todayStr = formatDateForDB(today);
+  
+  try {
+    // Simplified query to avoid relationship ambiguity
+    const { data: jobs, error } = await supabaseClient
+      .from('jobs')
+      .select('id, status, current_stop_index, collector_id')
+      .eq('scheduled_date', todayStr)
+      .in('status', ['in_progress', 'dropping_off'])
+      .limit(5);
+
+    if (error) throw error;
+
+    if (jobs && jobs.length > 0) {
+      // Fetch collector details separately
+      const collectorIds = [...new Set(jobs.map(j => j.collector_id).filter(Boolean))];
+      let collectorsMap = {};
+      
+      if (collectorIds.length > 0) {
+        const { data: collectorsData } = await supabaseClient
+          .from('collectors')
+          .select('id, first_name, last_name, employment_type')
+          .in('id', collectorIds);
+        
+        if (collectorsData) {
+          collectorsData.forEach(c => { collectorsMap[c.id] = c; });
+        }
+      }
+      
+      // Fetch stops for each job
+      const jobIds = jobs.map(j => j.id);
+      let stopsMap = {};
+      
+      const { data: stopsData } = await supabaseClient
+        .from('patient_stops')
+        .select('id, job_id, location_name, status')
+        .in('job_id', jobIds);
+      
+      if (stopsData) {
+        stopsData.forEach(s => {
+          if (!stopsMap[s.job_id]) stopsMap[s.job_id] = [];
+          stopsMap[s.job_id].push(s);
+        });
+      }
+
+      tbody.innerHTML = jobs.map(job => {
+        const collector = collectorsMap[job.collector_id] || {};
+        const stops = stopsMap[job.id] || [];
+        const completedStops = stops.filter(s => s.status === 'completed').length;
+        const totalStops = stops.length;
+        const currentStop = stops[job.current_stop_index] || stops[completedStops] || {};
+        const progress = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0;
+        const initials = getInitials(collector.first_name, collector.last_name);
+        const name = `${collector.first_name || ''} ${collector.last_name || ''}`.trim() || 'Unknown';
+        const statusBadge = job.status === 'dropping_off' 
+          ? '<span class="badge badge-mint">Dropping Off</span>'
+          : '<span class="badge badge-orange">In Progress</span>';
+        
+        return `<tr>
+          <td>
+            <div class="collector-cell">
+              <div class="collector-avatar">${initials}</div>
+              <div>
+                <div class="collector-name">${name}</div>
+                <div class="collector-sub">${collector.employment_type || 'Contractor'}</div>
+              </div>
+            </div>
+          </td>
+          <td>${currentStop.location_name || 'En route'}</td>
+          <td>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar"><div class="progress-fill" style="width:${progress}%"></div></div>
+              <span class="progress-label">${completedStops}/${totalStops}</span>
+            </div>
+          </td>
+          <td>${statusBadge}</td>
+        </tr>`;
+      }).join('');
+      showConnectionStatus(true);
+    } else {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">No active runs today</td></tr>`;
+      showConnectionStatus(true);
+    }
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch live runs:', err);
+    showConnectionStatus(false);
+    // Show fallback data
+    tbody.innerHTML = `
+      <tr>
+        <td><div class="collector-cell"><div class="collector-avatar">SC</div><div><div class="collector-name">Sarah Chen</div><div class="collector-sub">Contractor</div></div></div></td>
+        <td>Stop 3 — Teneriffe</td>
+        <td><div class="progress-bar-wrap"><div class="progress-bar"><div class="progress-fill" style="width:75%"></div></div><span class="progress-label">3/4</span></div></td>
+        <td><span class="badge badge-orange">In Progress</span></td>
+      </tr>
+    `;
+  }
+}
+
+async function fetchDocumentAlerts() {
+  const alertsList = document.getElementById('alerts-list');
+  
+  try {
+    const { data: alerts, error } = await supabaseClient
+      .from('v_document_alerts')
+      .select('*')
+      .limit(10);
+
+    if (error) throw error;
+
+    if (alerts && alerts.length > 0) {
+      alertsList.innerHTML = alerts.map(alert => {
+        const isExpired = alert.alert_type === 'expired';
+        return `
+          <div class="alert-item">
+            <div class="alert-dot ${isExpired ? 'red' : 'orange'}"></div>
+            <div>
+              <div class="alert-text">${alert.collector_name} — ${alert.document_type} ${isExpired ? 'expired' : 'expiring soon'}</div>
+              <div class="alert-sub">${alert.message || ''}</div>
+            </div>
+            <div class="alert-action" onclick="showPage('collectors')">Review &#8594;</div>
+          </div>
+        `;
+      }).join('');
+      
+      // Update docs badge
+      const expiredCount = alerts.filter(a => a.alert_type === 'expired').length;
+      document.getElementById('docs-badge').textContent = expiredCount || alerts.length;
+      showConnectionStatus(true);
+    } else {
+      alertsList.innerHTML = `
+        <div class="alert-item">
+          <div class="alert-dot orange"></div>
+          <div>
+            <div class="alert-text">No document alerts</div>
+            <div class="alert-sub">All documents are up to date</div>
+          </div>
+        </div>
+      `;
+    }
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch document alerts:', err);
+    // Show fallback alerts
+    alertsList.innerHTML = `
+      <div class="alert-item">
+        <div class="alert-dot red"></div>
+        <div>
+          <div class="alert-text">Sarah Chen — Public Liability Insurance expired</div>
+          <div class="alert-sub">Expired 10 days ago · Cannot assign new jobs</div>
+        </div>
+        <div class="alert-action" onclick="showPage('collectors')">Review &#8594;</div>
+      </div>
+      <div class="alert-item">
+        <div class="alert-dot orange"></div>
+        <div>
+          <div class="alert-text">Sarah Chen — WWCC expiring in 25 days</div>
+          <div class="alert-sub">Expires 23 Apr 2026</div>
+        </div>
+        <div class="alert-action" onclick="showPage('collectors')">Review &#8594;</div>
+      </div>
+    `;
+  }
+}
+
+async function fetchCollectors() {
+  try {
+    const { data, error } = await supabaseClient
+      .from('collectors')
+      .select('*')
+      .order('first_name', { ascending: true });
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      collectors = data.map(c => ({
+        id: c.id,
+        initials: getInitials(c.first_name, c.last_name),
+        name: `${c.first_name || ''} ${c.last_name || ''}`.trim(),
+        type: c.employment_type || 'contractor',
+        status: c.status || 'active',
+        phone: c.phone || '',
+        email: c.email || '',
+        joined: c.joined_date ? fmtDateFull(new Date(c.joined_date)) : '',
+        runsTotal: c.total_runs || 0,
+        earningsMonth: c.earnings_this_month || 0,
+        docs: c.document_status || ['valid','valid','valid','valid','valid','valid']
+      }));
+      
+      // Update subtitle
+      const activeCount = collectors.filter(c => c.status === 'active').length;
+      const alertCount = collectors.filter(c => c.docs && c.docs.some(d => d === 'expiring' || d === 'expired')).length;
+      document.getElementById('collectors-subtitle').textContent = `${activeCount} active collectors · ${alertCount} document alerts`;
+      document.getElementById('collectors-badge').textContent = activeCount;
+      
+      showConnectionStatus(true);
+    }
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch collectors:', err);
+    collectors = [...fallbackCollectors];
+  }
+  
+  renderCollectors();
+}
+
+async function fetchAvailability(weekStart, weekEnd) {
+  try {
+    const { data, error } = await supabaseClient
+      .from('availability')
+      .select('collector_id, available_date, slot')
+      .gte('available_date', formatDateForDB(weekStart))
+      .lte('available_date', formatDateForDB(weekEnd));
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      // Build availData object from results
+      const newAvailData = {};
+      collectors.forEach(c => {
+        newAvailData[c.id] = Array(28).fill(null);
+      });
+      
+      data.forEach(row => {
+        const date = new Date(row.available_date);
+        const baseMonday = getMonday(today);
+        const daysDiff = Math.floor((date - baseMonday) / (1000 * 60 * 60 * 24));
+        if (daysDiff >= 0 && daysDiff < 28 && newAvailData[row.collector_id]) {
+          newAvailData[row.collector_id][daysDiff] = row.slot;
+        }
+      });
+      
+      availData = newAvailData;
+      showConnectionStatus(true);
+    }
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch availability:', err);
+    // Keep using fallback data
+  }
+}
+
+async function fetchAvailabilitySnapshot() {
+  const tbody = document.getElementById('availability-snapshot-body');
+  const weekStart = getMonday(today);
+  const weekEnd = addDays(weekStart, 6);
+  
+  // Update column headers
+  const days = Array.from({length:7}, (_,i) => addDays(weekStart, i));
+  const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  days.forEach((d, i) => {
+    const col = document.getElementById(`day-col-${i+1}`);
+    if (col) col.textContent = `${dayNames[i]} ${d.getDate()}`;
+  });
+
+  try {
+    const { data, error } = await supabaseClient
+      .from('v_availability_4weeks')
+      .select('*')
+      .gte('available_date', formatDateForDB(weekStart))
+      .lte('available_date', formatDateForDB(weekEnd));
+
+    if (error) throw error;
+
+    // Group by collector
+    const collectorAvail = {};
+    if (data) {
+      data.forEach(row => {
+        if (!collectorAvail[row.collector_id]) {
+          collectorAvail[row.collector_id] = {
+            name: row.collector_name || 'Unknown',
+            initials: row.initials || '??',
+            days: {}
+          };
+        }
+        const date = new Date(row.available_date);
+        const dayIdx = Math.floor((date - weekStart) / (1000 * 60 * 60 * 24));
+        if (dayIdx >= 0 && dayIdx < 7) {
+          collectorAvail[row.collector_id].days[dayIdx] = row.slot;
+        }
+      });
+    }
+
+    const slotBadge = {
+      full: '<span class="badge badge-green">Full</span>',
+      am: '<span class="badge badge-mint">AM</span>',
+      pm: '<span class="badge badge-orange">PM</span>',
+      off: '<span class="badge badge-red">Off</span>',
+      null: '<span class="badge" style="color:var(--muted2)">—</span>'
+    };
+
+    if (Object.keys(collectorAvail).length > 0) {
+      tbody.innerHTML = Object.entries(collectorAvail).slice(0, 3).map(([id, c]) => {
+        const cells = Array.from({length:7}, (_, i) => {
+          const slot = c.days[i] || null;
+          return `<td>${slotBadge[slot] || slotBadge.null}</td>`;
+        }).join('');
+        return `<tr>
+          <td><div class="collector-cell"><div class="collector-avatar" style="width:24px;height:24px;font-size:10px">${c.initials}</div>${c.name}</div></td>
+          ${cells}
+        </tr>`;
+      }).join('');
+      showConnectionStatus(true);
+    } else {
+      // Use fallback collectors for snapshot
+      tbody.innerHTML = fallbackCollectors.slice(0, 3).map(c => {
+        const cData = fallbackAvailData[c.id] || [];
+        const cells = Array.from({length:7}, (_, i) => {
+          const slot = cData[i] || null;
+          return `<td>${slotBadge[slot] || slotBadge.null}</td>`;
+        }).join('');
+        return `<tr>
+          <td><div class="collector-cell"><div class="collector-avatar" style="width:24px;height:24px;font-size:10px">${c.initials}</div>${c.name}</div></td>
+          ${cells}
+        </tr>`;
+      }).join('');
+    }
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch availability snapshot:', err);
+    // Use fallback
+    const slotBadge = {
+      full: '<span class="badge badge-green">Full</span>',
+      am: '<span class="badge badge-mint">AM</span>',
+      pm: '<span class="badge badge-orange">PM</span>',
+      off: '<span class="badge badge-red">Off</span>',
+      null: '<span class="badge" style="color:var(--muted2)">—</span>'
+    };
+    tbody.innerHTML = fallbackCollectors.slice(0, 3).map(c => {
+      const cData = fallbackAvailData[c.id] || [];
+      const cells = Array.from({length:7}, (_, i) => {
+        const slot = cData[i] || null;
+        return `<td>${slotBadge[slot] || slotBadge.null}</td>`;
+      }).join('');
+      return `<tr>
+        <td><div class="collector-cell"><div class="collector-avatar" style="width:24px;height:24px;font-size:10px">${c.initials}</div>${c.name}</div></td>
+        ${cells}
+      </tr>`;
+    }).join('');
+  }
+}
+
+async function fetchLeaveRequests() {
+  try {
+    // First fetch leave requests
+    const { data, error } = await supabaseClient
+      .from('leave_requests')
+      .select('id, collector_id, leave_type, start_date, end_date, days, status, submitted_at')
+      .order('submitted_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      // Fetch collector names separately
+      const collectorIds = [...new Set(data.map(r => r.collector_id).filter(Boolean))];
+      let collectorsMap = {};
+      
+      if (collectorIds.length > 0) {
+        const { data: collectorsData } = await supabaseClient
+          .from('collectors')
+          .select('id, first_name, last_name')
+          .in('id', collectorIds);
+        
+        if (collectorsData) {
+          collectorsData.forEach(c => { collectorsMap[c.id] = c; });
+        }
+      }
+
+      leaveRequests = data.map(r => {
+        const collector = collectorsMap[r.collector_id] || {};
+        return {
+          id: r.id,
+          collectorId: r.collector_id,
+          collector: `${collector.first_name || ''} ${collector.last_name || ''}`.trim() || 'Unknown',
+          type: r.leave_type || 'Leave',
+          start: r.start_date ? fmtDateFull(new Date(r.start_date)) : '',
+          end: r.end_date ? fmtDateFull(new Date(r.end_date)) : '',
+          days: r.days || 1,
+          status: r.status || 'pending',
+          submitted: r.submitted_at ? fmtDateFull(new Date(r.submitted_at)) : ''
+        };
+      });
+      
+      // Update stats
+      const pending = leaveRequests.filter(r => r.status === 'pending').length;
+      const approved = leaveRequests.filter(r => r.status === 'approved').length;
+      const declined = leaveRequests.filter(r => r.status === 'declined').length;
+      const totalDays = leaveRequests.filter(r => r.status === 'approved').reduce((sum, r) => sum + r.days, 0);
+      
+      document.getElementById('leave-pending-count').textContent = pending;
+      document.getElementById('leave-approved-count').textContent = approved;
+      document.getElementById('leave-declined-count').textContent = declined;
+      document.getElementById('leave-total-days').textContent = totalDays;
+      document.getElementById('leave-badge').textContent = pending;
+      document.getElementById('leave-subtitle').textContent = `${pending} pending approval · Employees only`;
+      
+      showConnectionStatus(true);
+    }
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to fetch leave requests:', err);
+    leaveRequests = [...fallbackLeaveRequests];
+  }
+}
+
+async function updateLeaveRequest(id, newStatus) {
+  try {
+    const { error } = await supabaseClient
+      .from('leave_requests')
+      .update({ 
+        status: newStatus,
+        reviewed_at: new Date().toISOString()
+      })
+      .eq('id', id);
+
+    if (error) throw error;
+    
+    // Refresh leave requests
+    await fetchLeaveRequests();
+    renderLeave(leaveFilter);
+    showToast(`${newStatus === 'approved' ? '\u2713 Approved' : '\u2715 Declined'} leave request`, newStatus === 'approved' ? '\u2705' : '\u274c');
+    showConnectionStatus(true);
+  } catch (err) {
+    console.error('[Nura Admin Error] Failed to update leave request:', err);
+    // Fallback to local update
+    const req = leaveRequests.find(r => r.id === id);
+    if (req) {
+      req.status = newStatus;
+      renderLeave(leaveFilter);
+      showToast(`${newStatus === 'approved' ? '\u2713 Approved' : '\u2715 Declined'} leave request (offline)`, newStatus === 'approved' ? '\u2705' : '\u274c');
+    }
+  }
+}
+
+// ══════════════════════════════════════════════
+// REAL-TIME SUBSCRIPTIONS
+// ══════════════════════════════════════════════
+
+function setupRealtimeSubscriptions() {
+  // Subscribe to jobs table changes
+  supabaseClient
+    .channel('jobs-changes')
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs' }, (payload) => {
+      console.log('[Nura Admin] Job updated:', payload);
+      fetchLiveRuns();
+      fetchOverviewStats();
+    })
+    .subscribe();
+
+  // Subscribe to leave_requests table changes
+  supabaseClient
+    .channel('leave-changes')
+    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leave_requests' }, (payload) => {
+      console.log('[Nura Admin] New leave request:', payload);
+      fetchLeaveRequests().then(() => renderLeave(leaveFilter));
+    })
+    .subscribe();
+}
 
 // ══════════════════════════════════════════════
 // PAGE NAVIGATION
@@ -1323,9 +1870,39 @@ function showPage(name) {
   document.querySelectorAll('.nav-link').forEach(n => {
     if (n.getAttribute('onclick') === `showPage('${name}')`) n.classList.add('active');
   });
-  if (name === 'collectors') renderCollectors();
-  if (name === 'availability') initAvailability();
-  if (name === 'leave') renderLeave('all');
+  if (name === 'collectors') {
+    fetchCollectors();
+  }
+  if (name === 'availability') {
+    initAvailability();
+  }
+  if (name === 'leave') {
+    fetchLeaveRequests().then(() => renderLeave('all'));
+  }
+}
+
+async function refreshOverview() {
+  showToast('Refreshing live data...');
+  await Promise.all([
+    fetchOverviewStats(),
+    fetchLiveRuns(),
+    fetchDocumentAlerts(),
+    fetchAvailabilitySnapshot()
+  ]);
+  showToast('Data refreshed!', '\u2713');
+}
+
+function clearAlerts() {
+  document.getElementById('alerts-list').innerHTML = `
+    <div class="alert-item">
+      <div class="alert-dot orange"></div>
+      <div>
+        <div class="alert-text">No alerts</div>
+        <div class="alert-sub">All clear!</div>
+      </div>
+    </div>
+  `;
+  showToast('Alerts cleared');
 }
 
 // ══════════════════════════════════════════════
@@ -1353,7 +1930,7 @@ function renderCollectors() {
   if (searchQuery) list = list.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
   if (collectorFilter === 'contractor') list = list.filter(c => c.type === 'contractor');
   if (collectorFilter === 'employee')   list = list.filter(c => c.type === 'employee');
-  if (collectorFilter === 'alert')      list = list.filter(c => c.docs.some(d => d === 'expiring' || d === 'expired'));
+  if (collectorFilter === 'alert')      list = list.filter(c => c.docs && c.docs.some(d => d === 'expiring' || d === 'expired'));
 
   if (!list.length) {
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1"><div class="empty-icon">&#128269;</div><div class="empty-title">No collectors found</div></div>`;
@@ -1361,8 +1938,8 @@ function renderCollectors() {
   }
 
   grid.innerHTML = list.map(c => {
-    const docColors = c.docs.filter(Boolean).map(s => `<div class="doc-mini ${s}"></div>`).join('');
-    const hasAlert = c.docs.some(d => d === 'expiring' || d === 'expired');
+    const docColors = (c.docs || []).filter(Boolean).map(s => `<div class="doc-mini ${s}"></div>`).join('');
+    const hasAlert = c.docs && c.docs.some(d => d === 'expiring' || d === 'expired');
     const typeLabel = c.type === 'contractor' ? 'Independent Contractor' : 'Full-Time Employee';
     const statusBadge = c.status === 'active'
       ? `<span class="badge badge-green">Active</span>`
@@ -1383,7 +1960,7 @@ function renderCollectors() {
         <div class="doc-mini-bar">${docColors}</div>
         <div class="collector-card-stats">
           <div class="cstat"><div class="cstat-label">Runs Total</div><div class="cstat-value">${c.runsTotal}</div></div>
-          <div class="cstat"><div class="cstat-label">This Month</div><div class="cstat-value">$${c.earningsMonth.toLocaleString()}</div></div>
+          <div class="cstat"><div class="cstat-label">This Month</div><div class="cstat-value">$${(c.earningsMonth || 0).toLocaleString()}</div></div>
         </div>
       </div>`;
   }).join('');
@@ -1417,23 +1994,23 @@ function openPanel(id) {
 
     <div class="panel-section">
       <div class="panel-section-title">Contact</div>
-      <div class="info-row"><span class="lbl">Phone</span><span class="val">${c.phone}</span></div>
-      <div class="info-row"><span class="lbl">Email</span><span class="val" style="font-size:12px">${c.email}</span></div>
-      <div class="info-row"><span class="lbl">Joined</span><span class="val">${c.joined}</span></div>
+      <div class="info-row"><span class="lbl">Phone</span><span class="val">${c.phone || 'N/A'}</span></div>
+      <div class="info-row"><span class="lbl">Email</span><span class="val" style="font-size:12px">${c.email || 'N/A'}</span></div>
+      <div class="info-row"><span class="lbl">Joined</span><span class="val">${c.joined || 'N/A'}</span></div>
     </div>
 
     <div class="panel-section">
       <div class="panel-section-title">Performance</div>
       <div class="info-row"><span class="lbl">Total Runs</span><span class="val">${c.runsTotal}</span></div>
-      <div class="info-row"><span class="lbl">This Month</span><span class="val" style="color:var(--accent)">$${c.earningsMonth.toLocaleString()}</span></div>
+      <div class="info-row"><span class="lbl">This Month</span><span class="val" style="color:var(--accent)">$${(c.earningsMonth || 0).toLocaleString()}</span></div>
     </div>
 
     <div class="panel-section">
       <div class="panel-section-title">Documents</div>
-      ${c.docs.filter(Boolean).map((s, i) => `
+      ${(c.docs || []).filter(Boolean).map((s, i) => `
         <div class="info-row">
-          <span class="lbl">${docNames[i]}</span>
-          ${docStatusLabel[s]}
+          <span class="lbl">${docNames[i] || 'Document'}</span>
+          ${docStatusLabel[s] || '<span class="badge">Unknown</span>'}
         </div>`).join('')}
     </div>
 
@@ -1452,18 +2029,34 @@ function closePanel() {
 // AVAILABILITY
 // ══════════════════════════════════════════════
 let availWeekOffset = 0;
-let selectedCollectorChips = new Set(collectors.map(c => c.id));
+let selectedCollectorChips = new Set();
 
-function initAvailability() {
+async function initAvailability() {
+  // Initialize chips after collectors are loaded
+  if (collectors.length === 0) {
+    await fetchCollectors();
+  }
+  selectedCollectorChips = new Set(collectors.map(c => c.id));
+  
+  const weekStart = addDays(getMonday(today), availWeekOffset * 7);
+  const weekEnd = addDays(weekStart, 27); // 4 weeks
+  await fetchAvailability(weekStart, weekEnd);
+  
   renderCollectorChips();
   renderAvailGrid();
 }
 
-function availNavWeek(dir) {
+async function availNavWeek(dir) {
   availWeekOffset = Math.max(0, Math.min(3, availWeekOffset + dir));
   document.getElementById('avail-week-num').textContent = availWeekOffset + 1;
   document.getElementById('avail-prev').disabled = availWeekOffset === 0;
   document.getElementById('avail-next').disabled = availWeekOffset === 3;
+  
+  // Re-fetch availability for the new week
+  const weekStart = addDays(getMonday(today), availWeekOffset * 7);
+  const weekEnd = addDays(weekStart, 6);
+  await fetchAvailability(getMonday(today), addDays(getMonday(today), 27));
+  
   renderAvailGrid();
 }
 
@@ -1525,7 +2118,7 @@ function renderAvailGrid() {
 
   visible.forEach(c => {
     const startIdx = availWeekOffset * 7;
-    const cData = availData[c.id] || [];
+    const cData = availData[c.id] || fallbackAvailData[c.id] || [];
     const cells = days.map((_, i) => {
       const val = cData[startIdx + i] ?? null;
       const key = val ?? 'null';
@@ -1564,9 +2157,9 @@ function renderLeave(filter) {
     return;
   }
 
-  const c = collectors.find(x => x.id);
   tbody.innerHTML = list.map(r => {
     const col = collectors.find(x => x.id === r.collectorId);
+    const initials = col?.initials || getInitials(r.collector.split(' ')[0], r.collector.split(' ')[1]);
     const actions = r.status === 'pending'
       ? `<div style="display:flex;gap:6px">
            <button class="action-btn approve" onclick="handleLeave('${r.id}','approved')">\u2713 Approve</button>
@@ -1576,7 +2169,7 @@ function renderLeave(filter) {
     return `<tr>
       <td>
         <div class="collector-cell">
-          <div class="collector-avatar">${col?.initials || '?'}</div>
+          <div class="collector-avatar">${initials}</div>
           <div>
             <div class="collector-name">${r.collector}</div>
             <div class="collector-sub">Submitted ${r.submitted}</div>
@@ -1596,27 +2189,42 @@ function filterLeave(filter, btn) {
   renderLeave(filter);
 }
 
-function handleLeave(id, action) {
-  const req = leaveRequests.find(r => r.id === id);
-  if (!req) return;
-  req.status = action;
-  renderLeave(leaveFilter);
-  showToast(`${action === 'approved' ? '\u2713 Approved' : '\u2715 Declined'} leave for ${req.collector}`, action === 'approved' ? '\u2705' : '\u274c');
-
-  // update badge
+async function handleLeave(id, action) {
+  await updateLeaveRequest(id, action);
+  
+  // Update badge
   const pending = leaveRequests.filter(r => r.status === 'pending').length;
-  document.querySelectorAll('.nav-link').forEach(n => {
-    if (n.getAttribute('onclick') === "showPage('leave')") {
-      const badge = n.querySelector('.nav-badge');
-      if (badge) { badge.textContent = pending; badge.style.display = pending ? '' : 'none'; }
-    }
-  });
+  document.getElementById('leave-badge').textContent = pending;
+  document.getElementById('leave-badge').style.display = pending ? '' : 'none';
 }
 
 // ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
-renderCollectors();
+async function init() {
+  // Update date in subtitle
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  document.getElementById('overview-subtitle').textContent = 
+    `${today.toLocaleDateString('en-AU', options)} · Brisbane QLD`;
+
+  // Fetch all initial data
+  await Promise.all([
+    fetchOverviewStats(),
+    fetchLiveRuns(),
+    fetchDocumentAlerts(),
+    fetchAvailabilitySnapshot(),
+    fetchCollectors()
+  ]);
+  
+  // Setup real-time subscriptions
+  setupRealtimeSubscriptions();
+  
+  // Render collectors (already fetched)
+  renderCollectors();
+}
+
+// Start the app
+init();
 </script>
 </body>
 </html>
