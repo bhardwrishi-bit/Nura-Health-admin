@@ -58,6 +58,7 @@ Host a standalone admin dashboard HTML file as-is without modification, replacin
 - Availability grid view with week navigation
 - Leave request management with approve/decline actions (writes to Supabase)
 - Real-time updates via Supabase subscriptions
+- **Sprint Board** - 4-day launch checklist with task tracking (persisted in localStorage)
 
 ## Backlog
 - Phase 2: Documents module

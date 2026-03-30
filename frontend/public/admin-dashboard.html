@@ -1113,6 +1113,12 @@
     <div class="nav-link" onclick="showToast('Settings coming soon')">
       <span class="nav-icon">&#9881;</span> Settings
     </div>
+
+    <div class="nav-section-label">Build</div>
+    <div class="nav-link" onclick="showPage('sprint')">
+      <span class="nav-icon">&#128640;</span> Sprint Board
+      <span class="nav-badge orange" id="sprint-badge">0</span>
+    </div>
   </nav>
 
   <div class="sidebar-footer">
@@ -1390,6 +1396,20 @@
         </table>
       </div>
     </div>
+  </div>
+
+  <!-- ─── SPRINT BOARD ─── -->
+  <div id="page-sprint" class="page-content">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div class="page-title">Sprint Board</div>
+        <div class="page-subtitle">4-day launch checklist · Tick tasks off as you complete them</div>
+      </div>
+      <div class="topbar-right">
+        <button class="topbar-btn" onclick="sprintResetConfirm()">&#8634; Reset</button>
+      </div>
+    </div>
+    <div style="padding: 28px 32px;" id="sprint-page-body"></div>
   </div>
 
 </main>
@@ -2059,6 +2079,9 @@ function showPage(name) {
   if (name === 'leave') {
     fetchLeaveRequests().then(() => renderLeave('all'));
   }
+  if (name === 'sprint') {
+    renderSprint();
+  }
 }
 
 async function refreshOverview() {
@@ -2533,6 +2556,161 @@ supabaseClient.auth.onAuthStateChange((event, session) => {
 });
 
 // ══════════════════════════════════════════════
+// SPRINT BOARD
+// ══════════════════════════════════════════════
+const sprintTasks = [
+  { phase:'Website — Live & bookings-ready', icon:'🌐', priority:'critical', day:1, items:[
+    { id:'w1', name:'Upload pricing page to nurahealth.com.au', detail:'Add Nura_Health_Pricing_Page.html to your site as /pricing', tag:'Web', time:'30 min' },
+    { id:'w2', name:'Update Acuity link on pricing page', detail:'Replace placeholder URL with: app.acuityscheduling.com/schedule/91b927af', tag:'Web', time:'5 min' },
+    { id:'w3', name:'Update ABN in pricing page footer', detail:'Replace XX XXX XXX XXX with your real ABN', tag:'Web', time:'5 min' },
+    { id:'w4', name:'Add Book Now button to homepage', detail:'Every page needs a CTA linking to your Acuity booking page', tag:'Web', time:'20 min' },
+  ]},
+  { phase:'Stripe — Payment setup', icon:'💳', priority:'critical', day:1, items:[
+    { id:'s1', name:'Create Stripe account at stripe.com', detail:'Need: ABN, business name, bank BSB + account number, mobile for verification', tag:'Stripe', time:'15 min' },
+    { id:'s2', name:'Complete Stripe identity verification', detail:'Takes 24–48hrs to approve — do this first before anything else today', tag:'Stripe', time:'10 min' },
+    { id:'s3', name:'Set payout schedule to daily', detail:'Stripe Settings → Payouts → Daily', tag:'Stripe', time:'5 min' },
+  ]},
+  { phase:'Acuity Scheduling — Setup', icon:'📅', priority:'critical', day:1, items:[
+    { id:'a1', name:'Upload Nura logo to Acuity', detail:'Business Settings → Customize → upload Nura_Final-04.jpg', tag:'Acuity', time:'5 min' },
+    { id:'a2', name:'Set brand colours', detail:'Primary: #2B3879 · Button: #80E5CB', tag:'Acuity', time:'10 min' },
+    { id:'a3', name:'Create 3 appointment types', detail:'Home Visit Standard ($55) · Home Visit Urgent ($75) · NDIS ($93)', tag:'Acuity', time:'20 min' },
+    { id:'a4', name:'Add intake form fields', detail:'DOB (required) · Visit Address (required) · Referral upload (required) · Notes (optional)', tag:'Acuity', time:'20 min' },
+    { id:'a5', name:'Connect Stripe to Acuity', detail:'Business Settings → Payment Settings → Connect Stripe', tag:'Acuity', time:'15 min' },
+    { id:'a6', name:'Set availability hours', detail:'7:00 AM – 5:00 PM Monday to Saturday. Block Sundays.', tag:'Acuity', time:'10 min' },
+    { id:'a7', name:'Set up confirmation & reminder emails', detail:'Enable booking confirmation, 24hr reminder, SMS evening before', tag:'Acuity', time:'15 min' },
+    { id:'a8', name:'Set cancellation policy', detail:'Free 24hrs+ · $25 within 24hrs · Non-refundable same day', tag:'Acuity', time:'10 min' },
+    { id:'a9', name:'Do a full test booking end-to-end', detail:'Book fake appointment → check confirmation email → check Stripe → cancel & refund', tag:'Acuity', time:'20 min' },
+  ]},
+  { phase:'Admin Dashboard — Complete', icon:'🖥️', priority:'important', day:2, items:[
+    { id:'d1', name:'Add patient bookings view', detail:'New Bookings page showing all confirmed bookings from patient_bookings table', tag:'Dashboard', time:'Ask Claude' },
+    { id:'d2', name:'Build Acuity → Supabase webhook', detail:'Every Acuity booking auto-creates a job in your database — ask Claude to write this', tag:'Supabase', time:'Ask Claude' },
+    { id:'d3', name:'Add Assign Collector button to bookings', detail:'Admin assigns an available collector to each new booking', tag:'Dashboard', time:'Ask Claude' },
+    { id:'d4', name:'Add password protection to dashboard', detail:'Simple login screen before the dashboard — stops public access', tag:'Dashboard', time:'Ask Claude' },
+  ]},
+  { phase:'Nura Rounds App — Polish', icon:'📱', priority:'important', day:3, items:[
+    { id:'r1', name:'Test full runsheet flow with Jaspreet', detail:'Get Jaspreet to run through the app on her phone and note any issues', tag:'App', time:'1 hr' },
+    { id:'r2', name:'Verify slider timestamps saving to Supabase', detail:'Check runsheet_events table after a test run — rows should appear', tag:'App', time:'15 min' },
+    { id:'r3', name:'Fix real collector auth — replace test UUIDs', detail:'Real collector auth_id must link to their collector record in Supabase', tag:'App', time:'Ask Claude' },
+    { id:'r4', name:'Test availability submission → admin dashboard', detail:'Submit in app → confirm it appears in admin planner within seconds', tag:'App', time:'15 min' },
+  ]},
+  { phase:'Pre-launch checks', icon:'🚀', priority:'critical', day:4, items:[
+    { id:'l1', name:'Rotate Supabase anon key', detail:'Settings → API Keys → rotate the key shared in this chat. Update both apps.', tag:'Supabase', time:'15 min' },
+    { id:'l2', name:'Set up hello@nurahealth.com.au email', detail:'Google Workspace $10/month — corporate enquiries need somewhere to land', tag:'Web', time:'30 min' },
+    { id:'l3', name:'Add privacy policy page', detail:'Required before taking payments — ask Claude to write one for Nura Health', tag:'Web', time:'Ask Claude' },
+    { id:'l4', name:'Add cancellation policy page', detail:'Required legally — ask Claude to write it', tag:'Web', time:'Ask Claude' },
+    { id:'l5', name:'Check mobile responsiveness of pricing page', detail:'Open on iPhone + Android — all 3 sections must render cleanly', tag:'Web', time:'15 min' },
+    { id:'l6', name:'Full end-to-end patient journey test', detail:'Website → Book Now → Acuity → Payment → Admin dashboard → Nura Rounds', tag:'Web', time:'30 min' },
+    { id:'l7', name:'Add Google Analytics to website', detail:'Free, 10 minutes — you want to track visitors and drop-off points', tag:'Web', time:'10 min' },
+  ]},
+];
+
+const tagColors = {
+  'Web':      'background:rgba(128,229,203,0.1);color:#80E5CB;border:1px solid rgba(128,229,203,0.3)',
+  'Stripe':   'background:rgba(99,91,255,0.12);color:#a095ff;border:1px solid rgba(99,91,255,0.3)',
+  'Acuity':   'background:rgba(255,183,77,0.12);color:#FFB74D;border:1px solid rgba(255,183,77,0.3)',
+  'Dashboard':'background:rgba(244,67,54,0.1);color:#F44336;border:1px solid rgba(244,67,54,0.3)',
+  'Supabase': 'background:rgba(76,175,80,0.1);color:#4CAF50;border:1px solid rgba(76,175,80,0.3)',
+  'App':      'background:rgba(43,56,121,0.3);color:#8899FF;border:1px solid rgba(43,56,121,0.5)',
+};
+
+const priorityStyle = {
+  critical:  'background:rgba(244,67,54,0.12);color:#F44336;border:1px solid rgba(244,67,54,0.3)',
+  important: 'background:rgba(255,183,77,0.12);color:#FFB74D;border:1px solid rgba(255,183,77,0.3)',
+  nice:      'background:rgba(128,229,203,0.1);color:#80E5CB;border:1px solid rgba(128,229,203,0.2)',
+};
+
+function loadSprintState() {
+  try { return JSON.parse(localStorage.getItem('nura_sprint') || '{}'); } catch(e) { return {}; }
+}
+function saveSprintState(s) {
+  try { localStorage.setItem('nura_sprint', JSON.stringify(s)); } catch(e) {}
+}
+
+function toggleSprintTask(id) {
+  const s = loadSprintState();
+  s[id] = !s[id];
+  saveSprintState(s);
+  renderSprint();
+  updateSprintBadge();
+}
+
+function sprintResetConfirm() {
+  if (confirm('Reset all sprint tasks? This cannot be undone.')) {
+    localStorage.removeItem('nura_sprint');
+    renderSprint();
+    updateSprintBadge();
+    showToast('Sprint board reset');
+  }
+}
+
+function updateSprintBadge() {
+  const s = loadSprintState();
+  const total = sprintTasks.flatMap(p => p.items).length;
+  const done = sprintTasks.flatMap(p => p.items).filter(t => s[t.id]).length;
+  const remaining = total - done;
+  const badge = document.getElementById('sprint-badge');
+  if (badge) { badge.textContent = remaining; badge.style.display = remaining > 0 ? '' : 'none'; }
+}
+
+function renderSprint() {
+  const body = document.getElementById('sprint-page-body');
+  if (!body) return;
+  const s = loadSprintState();
+  const allItems = sprintTasks.flatMap(p => p.items);
+  const total = allItems.length;
+  const done = allItems.filter(t => s[t.id]).length;
+  const critical = sprintTasks.filter(p => p.priority === 'critical').flatMap(p => p.items).filter(t => !s[t.id]).length;
+  const pct = Math.round((done/total)*100);
+
+  let html = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+      <div class="leave-stat"><div class="leave-stat-num" style="color:var(--danger)">${critical}</div><div class="leave-stat-label">Critical left</div></div>
+      <div class="leave-stat"><div class="leave-stat-num">${total}</div><div class="leave-stat-label">Total tasks</div></div>
+      <div class="leave-stat"><div class="leave-stat-num" style="color:var(--success)">${done}</div><div class="leave-stat-label">Completed</div></div>
+      <div class="leave-stat"><div class="leave-stat-num" style="color:var(--accent)">4</div><div class="leave-stat-label">Days to launch</div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px">
+      <div style="flex:1;height:8px;background:var(--card3);border-radius:4px;overflow:hidden">
+        <div style="width:${pct}%;height:100%;background:var(--success);border-radius:4px;transition:width 0.4s"></div>
+      </div>
+      <div style="font-size:13px;color:var(--muted);white-space:nowrap">${pct}% complete</div>
+    </div>`;
+
+  sprintTasks.forEach((phase, pi) => {
+    const pDone = phase.items.filter(t => s[t.id]).length;
+    const allDone = pDone === phase.items.length;
+    html += `
+      <div style="background:var(--card);border-radius:16px;border:1px solid var(--border);margin-bottom:14px;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:10px;padding:14px 18px;background:var(--card2);border-bottom:1px solid var(--border)">
+          <span style="font-size:18px">${phase.icon}</span>
+          <span style="font-size:14px;font-weight:600;flex:1">${phase.phase}</span>
+          <span style="font-size:12px;color:var(--muted);margin-right:6px">${pDone}/${phase.items.length}</span>
+          <span style="font-size:11px;font-weight:600;padding:3px 10px;border-radius:20px;${allDone ? 'background:rgba(76,175,80,0.15);color:var(--success)' : priorityStyle[phase.priority]}">${allDone ? '✓ Done' : phase.priority.charAt(0).toUpperCase()+phase.priority.slice(1)}</span>
+          <span style="font-size:11px;color:var(--muted);margin-left:6px">Day ${phase.day}</span>
+        </div>
+        ${phase.items.map(t => {
+          const isDone = !!s[t.id];
+          return `
+            <div onclick="toggleSprintTask('${t.id}')" style="display:flex;align-items:flex-start;gap:12px;padding:13px 18px;border-bottom:1px solid var(--border2);cursor:pointer;transition:background 0.15s" onmouseover="this.style.background='rgba(128,229,203,0.04)'" onmouseout="this.style.background=''">
+              <div style="width:20px;height:20px;border-radius:6px;border:1.5px solid ${isDone?'var(--success)':'var(--muted2)'};background:${isDone?'var(--success)':'transparent'};display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;font-size:12px;color:white;font-weight:700">${isDone?'✓':''}</div>
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:600;color:${isDone?'var(--muted)':'var(--text)'};text-decoration:${isDone?'line-through':'none'};margin-bottom:3px">${t.name}</div>
+                <div style="font-size:12px;color:var(--muted);line-height:1.5;margin-bottom:6px">${t.detail}</div>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:6px;${tagColors[t.tag]||''}">${t.tag}</span>
+                  <span style="font-size:11px;color:var(--muted2)">⏱ ${t.time}</span>
+                </div>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  });
+
+  body.innerHTML = html;
+  updateSprintBadge();
+}
+
+// ══════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════
 async function init() {
@@ -2555,6 +2733,9 @@ async function init() {
   
   // Render collectors (already fetched)
   renderCollectors();
+  
+  // Update sprint badge
+  updateSprintBadge();
 }
 
 // Start the app - check auth first
