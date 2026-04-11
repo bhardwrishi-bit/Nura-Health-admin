@@ -4,11 +4,12 @@ import { Plus, Phone, Mail, X } from 'lucide-react';
 
 const EMPTY_FORM = { name:'', type:'contractor', status:'active', phone:'', email:'', document_expiry:'' };
 
-const initials = (name) => name.split(' ').map(w=>w[0]||'').join('').toUpperCase().slice(0,2);
+const initials = (name) => (name || '?').split(' ').map(w => w[0] || '').join('').toUpperCase().slice(0, 2) || '?';
 
 export default function CollectorsPage() {
   const [collectors, setCollectors] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [showInvite, setShowInvite] = useState(false);
   const [selected, setSelected] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -16,9 +17,14 @@ export default function CollectorsPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchCollectors = async () => {
-    const { data } = await supabase.from('collectors').select('*').order('created_at', { ascending:false });
-    setCollectors(data || []);
-    setLoading(false);
+    try {
+      const { data, error } = await supabase.from('collectors').select('*').order('created_at', { ascending: false });
+      if (error) { setError(error.message); } else { setCollectors(data || []); }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -66,6 +72,11 @@ export default function CollectorsPage() {
         <button className="btn-mint" onClick={() => setShowInvite(true)}><Plus size={14} /> Invite Collector</button>
       </div>
 
+      {error && (
+        <div style={{ padding:'16px', marginBottom:16, background:'rgba(244,67,54,0.08)', border:'1px solid rgba(244,67,54,0.2)', borderRadius:8, color:'var(--danger)', fontSize:13 }}>
+          Could not load collectors: {error}. Run migrations in Supabase first.
+        </div>
+      )}
       {loading ? <div className="empty-state">Loading…</div> : (
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px, 1fr))', gap:16 }}>
           {collectors.map(c => (
