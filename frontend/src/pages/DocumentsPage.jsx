@@ -2,30 +2,49 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Plus, X, ExternalLink } from 'lucide-react';
 
-const DOC_TYPES = ['WWCC','Police Check','First Aid','ABN','Insurance','Driver\'s Licence'];
-const EMPTY_FORM = { collector_id:'', document_type:'WWCC', expiry_date:'', file_url:'' };
+// Real document_type values from Supabase `documents` table
+const DOC_TYPES = [
+  'wwcc', 'police_check', 'phlebotomy_certificate',
+  'first_aid', 'insurance', 'drivers_licence', 'abn_registration', 'other'
+];
+
+const DOC_TYPE_LABELS = {
+  wwcc: 'WWCC',
+  police_check: 'Police Check',
+  phlebotomy_certificate: 'Phlebotomy Certificate',
+  first_aid: 'First Aid',
+  insurance: 'Insurance',
+  drivers_licence: "Driver's Licence",
+  abn_registration: 'ABN Registration',
+  other: 'Other',
+};
+
+const EMPTY_FORM = { collector_id:'', document_type:'wwcc', expiry_date:'', file_url:'' };
 
 const docStatus = (expiry_date) => {
-  if (!expiry_date) return { status:'missing', badge:'danger', label:'Missing' };
+  if (!expiry_date) return { status:'missing', badge:'neutral', label:'No expiry' };
   const days = Math.ceil((new Date(expiry_date) - new Date()) / 86400000);
   if (days < 0)  return { status:'expired',  badge:'danger',  label:`Expired ${Math.abs(days)}d ago` };
   if (days <= 30) return { status:'expiring', badge:'warning', label:`Expiring in ${days}d` };
   return { status:'valid', badge:'success', label:'Valid' };
 };
 
+const collectorName = (c) => c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '—';
+
 export default function DocumentsPage() {
   const [collectors, setCollectors] = useState([]);
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(null); // collector filter
+  const [selected, setSelected] = useState(null); // collector filter id
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
   const fetchData = async () => {
     const [cRes, dRes] = await Promise.all([
-      supabase.from('collectors').select('id, name').order('name'),
-      supabase.from('collector_documents').select('*, collectors(name)').order('created_at', { ascending:false }),
+      supabase.from('collectors').select('id, first_name, last_name').order('first_name'),
+      // Real table: documents (not collector_documents)
+      supabase.from('documents').select('*, collectors(id, first_name, last_name)').order('created_at', { ascending:false }),
     ]);
     setCollectors(cRes.data || []);
     setDocuments(dRes.data || []);
@@ -35,7 +54,7 @@ export default function DocumentsPage() {
   useEffect(() => {
     fetchData();
     const ch = supabase.channel('docs-page')
-      .on('postgres_changes', { event:'*', schema:'public', table:'collector_documents' }, fetchData)
+      .on('postgres_changes', { event:'*', schema:'public', table:'documents' }, fetchData)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
@@ -43,15 +62,14 @@ export default function DocumentsPage() {
   const handleAdd = async (e) => {
     e.preventDefault();
     setSaving(true);
-    const { status } = docStatus(form.expiry_date);
-    await supabase.from('collector_documents').insert({ ...form, status });
+    await supabase.from('documents').insert({ ...form });
     setSaving(false);
     setShowModal(false);
     setForm(EMPTY_FORM);
   };
 
   const handleDelete = async (id) => {
-    await supabase.from('collector_documents').delete().eq('id', id);
+    await supabase.from('documents').delete().eq('id', id);
   };
 
   const filtered = selected ? documents.filter(d=>d.collector_id===selected) : documents;
@@ -74,12 +92,12 @@ export default function DocumentsPage() {
       {/* Alerts */}
       {expiring.length > 0 && (
         <div className="nura-card" style={{ marginBottom:20 }}>
-          <div style={{ fontSize:12, fontWeight:600, color:'var(--warning)', marginBottom:12 }}>⚠ Documents Requiring Attention</div>
+          <div style={{ fontSize:12, fontWeight:600, color:'var(--warning)', marginBottom:12 }}>Documents Requiring Attention</div>
           {expiring.map(d => {
             const { badge, label } = docStatus(d.expiry_date);
             return (
               <div key={d.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid var(--border2)', fontSize:12 }}>
-                <span><strong>{d.collectors?.name}</strong> — {d.document_type}</span>
+                <span><strong>{collectorName(d.collectors)}</strong> — {DOC_TYPE_LABELS[d.document_type]||d.document_type}</span>
                 <span className={`badge badge-${badge}`}>{label}</span>
               </div>
             );
@@ -89,9 +107,18 @@ export default function DocumentsPage() {
 
       {/* Filter by collector */}
       <div style={{ display:'flex', gap:8, marginBottom:18, flexWrap:'wrap' }}>
-        <button className={`tab-item${!selected?' active':''}`} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px' }} onClick={()=>setSelected(null)}>All</button>
+        <button
+          className={`tab-item${!selected?' active':''}`}
+          style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px' }}
+          onClick={()=>setSelected(null)}
+        >All</button>
         {collectors.map(c=>(
-          <button key={c.id} className={`tab-item${selected===c.id?' active':''}`} style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px' }} onClick={()=>setSelected(c.id)}>{c.name}</button>
+          <button
+            key={c.id}
+            className={`tab-item${selected===c.id?' active':''}`}
+            style={{ border:'1px solid var(--border)', borderRadius:6, padding:'5px 12px' }}
+            onClick={()=>setSelected(c.id)}
+          >{collectorName(c)}</button>
         ))}
       </div>
 
@@ -108,8 +135,8 @@ export default function DocumentsPage() {
                 const { badge, label } = docStatus(d.expiry_date);
                 return (
                   <tr key={d.id}>
-                    <td style={{ fontWeight:500 }}>{d.collectors?.name}</td>
-                    <td style={{ fontSize:12 }}>{d.document_type}</td>
+                    <td style={{ fontWeight:500 }}>{collectorName(d.collectors)}</td>
+                    <td style={{ fontSize:12 }}>{DOC_TYPE_LABELS[d.document_type]||d.document_type}</td>
                     <td style={{ fontSize:12 }}>{d.expiry_date || '—'}</td>
                     <td><span className={`badge badge-${badge}`}>{label}</span></td>
                     <td>
@@ -142,13 +169,13 @@ export default function DocumentsPage() {
                 <label className="nura-label">Collector *</label>
                 <select className="nura-select" value={form.collector_id} onChange={e=>setForm(p=>({...p,collector_id:e.target.value}))} required>
                   <option value="">Select collector…</option>
-                  {collectors.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  {collectors.map(c=><option key={c.id} value={c.id}>{collectorName(c)}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom:12 }}>
                 <label className="nura-label">Document Type</label>
                 <select className="nura-select" value={form.document_type} onChange={e=>setForm(p=>({...p,document_type:e.target.value}))}>
-                  {DOC_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                  {DOC_TYPES.map(t=><option key={t} value={t}>{DOC_TYPE_LABELS[t]||t}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom:12 }}>

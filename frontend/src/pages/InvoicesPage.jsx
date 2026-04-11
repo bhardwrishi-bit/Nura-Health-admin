@@ -20,7 +20,7 @@ export default function InvoicesPage() {
   const fetchData = async () => {
     const [bRes, cRes] = await Promise.all([
       supabase.from('patient_bookings').select('*').order('scheduled_date', { ascending:false }),
-      supabase.from('collectors').select('id, name').order('name'),
+      supabase.from('collectors').select('id, first_name, last_name').order('first_name'),
     ]);
     setBookings(bRes.data || []);
     setCollectors(cRes.data || []);
@@ -73,7 +73,7 @@ export default function InvoicesPage() {
         <select className="nura-select" style={{ width:'auto' }} value={selectedCollector} onChange={e=>setSelectedCollector(e.target.value)}>
           <option value="all">All collectors</option>
           <option value="unassigned">Unassigned</option>
-          {collectors.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          {collectors.map(c=><option key={c.id} value={c.id}>{[c.first_name,c.last_name].filter(Boolean).join(' ')}</option>)}
         </select>
       </div>
 
@@ -119,7 +119,7 @@ export default function InvoicesPage() {
                       onChange={e => assignCollector(b.id, e.target.value)}
                     >
                       <option value="">Unassigned</option>
-                      {collectors.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                      {collectors.map(c=><option key={c.id} value={c.id}>{[c.first_name,c.last_name].filter(Boolean).join(' ')}</option>)}
                     </select>
                   </td>
                   <td>

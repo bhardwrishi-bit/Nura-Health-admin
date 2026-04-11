@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, ExternalLink, Search } from 'lucide-react';
+import { Plus, Search } from 'lucide-react';
 
 const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled','pending_payment'];
 const SERVICE_OPTIONS = ['home-visit','corporate','aged-care','ndis'];
@@ -12,10 +12,16 @@ const statusBadge = (s) => {
   return <span className={`badge badge-${map[s]||'neutral'}`}>{s}</span>;
 };
 
-const EMPTY_FORM = { first_name:'', last_name:'', email:'', phone:'', service_type:'home-visit', scheduled_date:'', scheduled_time:'morning-early', address:'', suburb:'', state:'VIC', postcode:'', amount_charged:'', special_notes:'', payment_status:'pending', status:'confirmed', referral_uploaded:false };
+const EMPTY_FORM = {
+  first_name:'', last_name:'', email:'', phone:'',
+  service_type:'home-visit', scheduled_date:'', scheduled_time:'morning-early',
+  address:'', suburb:'', state:'VIC', postcode:'',
+  amount_charged:'', special_notes:'', payment_status:'pending', status:'confirmed',
+};
 
 export default function BookingsPage() {
   const [bookings, setBookings] = useState([]);
+  const [collectors, setCollectors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
@@ -24,13 +30,26 @@ export default function BookingsPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchBookings = async () => {
-    const { data } = await supabase.from('patient_bookings').select('*').order('created_at', { ascending:false });
+    const { data } = await supabase
+      .from('patient_bookings')
+      .select('*, collectors(id, first_name, last_name)')
+      .order('created_at', { ascending:false });
     setBookings(data || []);
     setLoading(false);
   };
 
+  const fetchCollectors = async () => {
+    const { data } = await supabase
+      .from('collectors')
+      .select('id, first_name, last_name')
+      .eq('status', 'active')
+      .order('first_name');
+    setCollectors(data || []);
+  };
+
   useEffect(() => {
     fetchBookings();
+    fetchCollectors();
     const ch = supabase.channel('bookings-page')
       .on('postgres_changes', { event:'*', schema:'public', table:'patient_bookings' }, fetchBookings)
       .subscribe();
@@ -41,11 +60,19 @@ export default function BookingsPage() {
     await supabase.from('patient_bookings').update({ status }).eq('id', id);
   };
 
+  const assignCollector = async (id, collector_id) => {
+    await supabase.from('patient_bookings').update({ collector_id: collector_id || null }).eq('id', id);
+  };
+
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
     const booking_ref = 'NR-' + Date.now().toString(36).toUpperCase();
-    await supabase.from('patient_bookings').insert({ ...form, booking_ref, amount_charged: parseFloat(form.amount_charged)||0 });
+    await supabase.from('patient_bookings').insert({
+      ...form,
+      booking_ref,
+      amount_charged: parseFloat(form.amount_charged)||0,
+    });
     setSaving(false);
     setShowModal(false);
     setForm(EMPTY_FORM);
@@ -56,6 +83,11 @@ export default function BookingsPage() {
     const matchFilter = filter === 'all' || b.status === filter;
     return matchSearch && matchFilter;
   });
+
+  const collectorName = (b) => {
+    if (b.collectors) return `${b.collectors.first_name||''} ${b.collectors.last_name||''}`.trim();
+    return '';
+  };
 
   return (
     <div>
@@ -83,51 +115,66 @@ export default function BookingsPage() {
         {loading ? <div className="empty-state">Loading…</div> : filtered.length === 0 ? (
           <div className="empty-state">No bookings found</div>
         ) : (
-          <table className="nura-table">
-            <thead><tr>
-              <th>Patient</th><th>Service</th><th>Appointment</th><th>Amount</th>
-              <th>Payment</th><th>Status</th><th>Referral</th><th>Booked</th>
-            </tr></thead>
-            <tbody>
-              {filtered.map(b => (
-                <tr key={b.id}>
-                  <td>
-                    <div style={{ fontWeight:500 }}>{b.first_name} {b.last_name}</div>
-                    <div style={{ fontSize:11, color:'var(--muted)' }}>{b.email}</div>
-                    <div style={{ fontSize:11, color:'var(--muted)' }}>{b.phone}</div>
-                  </td>
-                  <td style={{ fontSize:12 }}>
-                    <div>{b.service_type}</div>
-                    <div style={{ color:'var(--muted)', fontSize:11 }}>{b.address}</div>
-                  </td>
-                  <td style={{ fontSize:12 }}>
-                    <div>{b.scheduled_date}</div>
-                    <div style={{ color:'var(--muted)' }}>{TIME_LABELS[b.scheduled_time]||b.scheduled_time}</div>
-                  </td>
-                  <td style={{ color:'var(--accent)' }}>${parseFloat(b.amount_charged||0).toFixed(2)}</td>
-                  <td><span className={`badge badge-${b.payment_status==='paid'?'success':b.payment_status==='failed'?'danger':'warning'}`}>{b.payment_status}</span></td>
-                  <td>
-                    <select
-                      className="nura-select"
-                      style={{ width:'auto', fontSize:11, padding:'4px 8px' }}
-                      value={b.status}
-                      onChange={e => updateStatus(b.id, e.target.value)}
-                    >
-                      {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    {b.prescription_url ? (
-                      <a href={b.prescription_url} target="_blank" rel="noopener noreferrer" style={{ color:'var(--accent)', fontSize:11, display:'flex', alignItems:'center', gap:4 }}>
-                        View <ExternalLink size={11} />
-                      </a>
-                    ) : <span style={{ fontSize:11, color:'var(--muted)' }}>None</span>}
-                  </td>
-                  <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(b.created_at).toLocaleDateString('en-AU')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div style={{ overflowX:'auto' }}>
+            <table className="nura-table">
+              <thead><tr>
+                <th>Patient</th><th>Service</th><th>Appointment</th>
+                <th>Collector</th><th>Amount</th><th>Payment</th>
+                <th>Status</th><th>Booked</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map(b => (
+                  <tr key={b.id}>
+                    <td>
+                      <div style={{ fontWeight:500 }}>{b.first_name} {b.last_name}</div>
+                      <div style={{ fontSize:11, color:'var(--muted)' }}>{b.email}</div>
+                      <div style={{ fontSize:11, color:'var(--muted)' }}>{b.phone}</div>
+                    </td>
+                    <td style={{ fontSize:12 }}>
+                      <div>{b.service_type}</div>
+                      <div style={{ color:'var(--muted)', fontSize:11 }}>{[b.suburb, b.state].filter(Boolean).join(', ')}</div>
+                    </td>
+                    <td style={{ fontSize:12 }}>
+                      <div>{b.scheduled_date}</div>
+                      <div style={{ color:'var(--muted)' }}>{TIME_LABELS[b.scheduled_time]||b.scheduled_time||'—'}</div>
+                    </td>
+                    <td>
+                      <select
+                        className="nura-select"
+                        style={{ width:'auto', fontSize:11, padding:'4px 8px' }}
+                        value={b.collector_id || ''}
+                        onChange={e => assignCollector(b.id, e.target.value)}
+                      >
+                        <option value="">Unassigned</option>
+                        {collectors.map(c => (
+                          <option key={c.id} value={c.id}>
+                            {c.first_name} {c.last_name}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td style={{ color:'var(--accent)' }}>${parseFloat(b.amount_charged||0).toFixed(2)}</td>
+                    <td>
+                      <span className={`badge badge-${b.payment_status==='paid'?'success':b.payment_status==='failed'?'danger':'warning'}`}>
+                        {b.payment_status||'pending'}
+                      </span>
+                    </td>
+                    <td>
+                      <select
+                        className="nura-select"
+                        style={{ width:'auto', fontSize:11, padding:'4px 8px' }}
+                        value={b.status}
+                        onChange={e => updateStatus(b.id, e.target.value)}
+                      >
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </td>
+                    <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(b.created_at).toLocaleDateString('en-AU')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

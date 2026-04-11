@@ -2,9 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Plus, Phone, Mail, X } from 'lucide-react';
 
-const EMPTY_FORM = { name:'', type:'contractor', status:'active', phone:'', email:'', document_expiry:'' };
+const EMPTY_FORM = { first_name:'', last_name:'', employment_type:'contractor', status:'active', phone:'', email:'', abn:'' };
 
-const initials = (name) => (name || '?').split(' ').map(w => w[0] || '').join('').toUpperCase().slice(0, 2) || '?';
+const initials = (first, last) => {
+  const f = (first||'').trim()[0] || '';
+  const l = (last||'').trim()[0] || '';
+  return (f + l).toUpperCase() || '?';
+};
+
+const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || '—';
 
 export default function CollectorsPage() {
   const [collectors, setCollectors] = useState([]);
@@ -15,10 +21,15 @@ export default function CollectorsPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [editForm, setEditForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [runsheet, setRunsheet] = useState([]);
+  const [runsheetTab, setRunsheetTab] = useState('profile'); // 'profile' | 'runsheet'
 
   const fetchCollectors = async () => {
     try {
-      const { data, error } = await supabase.from('collectors').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase
+        .from('collectors')
+        .select('*')
+        .order('created_at', { ascending: false });
       if (error) { setError(error.message); } else { setCollectors(data || []); }
     } catch (err) {
       setError(err.message);
@@ -44,7 +55,18 @@ export default function CollectorsPage() {
     setForm(EMPTY_FORM);
   };
 
-  const openProfile = (c) => { setSelected(c); setEditForm({ ...c }); };
+  const openProfile = async (c) => {
+    setSelected(c);
+    setEditForm({ ...c });
+    setRunsheetTab('profile');
+    // Load bookings assigned to this collector
+    const { data } = await supabase
+      .from('patient_bookings')
+      .select('id, first_name, last_name, service_type, scheduled_date, scheduled_time, status, amount_charged')
+      .eq('collector_id', c.id)
+      .order('scheduled_date', { ascending: false });
+    setRunsheet(data || []);
+  };
 
   const handleUpdate = async (e) => {
     e.preventDefault();
@@ -54,12 +76,9 @@ export default function CollectorsPage() {
     setSelected(null);
   };
 
-  const docExpiryStatus = (date) => {
-    if (!date) return null;
-    const days = Math.ceil((new Date(date) - new Date()) / 86400000);
-    if (days < 0) return <span className="badge badge-danger">Expired</span>;
-    if (days <= 30) return <span className="badge badge-warning">Expiring in {days}d</span>;
-    return <span className="badge badge-success">Valid</span>;
+  const TIME_LABELS = {
+    'morning-early':'7–9 AM','morning-late':'9–11 AM',
+    'afternoon-early':'11 AM–1 PM','afternoon-late':'1–3 PM','evening':'3–5 PM'
   };
 
   return (
@@ -74,7 +93,7 @@ export default function CollectorsPage() {
 
       {error && (
         <div style={{ padding:'16px', marginBottom:16, background:'rgba(244,67,54,0.08)', border:'1px solid rgba(244,67,54,0.2)', borderRadius:8, color:'var(--danger)', fontSize:13 }}>
-          Could not load collectors: {error}. Run migrations in Supabase first.
+          Could not load collectors: {error}
         </div>
       )}
       {loading ? <div className="empty-state">Loading…</div> : (
@@ -82,11 +101,11 @@ export default function CollectorsPage() {
           {collectors.map(c => (
             <div key={c.id} className="collector-card" onClick={() => openProfile(c)}>
               <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
-                <div className="collector-avatar">{initials(c.name)}</div>
+                <div className="collector-avatar">{initials(c.first_name, c.last_name)}</div>
                 <div>
-                  <div style={{ fontWeight:500, fontSize:14 }}>{c.name}</div>
+                  <div style={{ fontWeight:500, fontSize:14 }}>{fullName(c)}</div>
                   <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                    <span className={`badge badge-${c.type==='employee'?'accent':'neutral'}`} style={{ fontSize:10 }}>{c.type}</span>
+                    <span className={`badge badge-${c.employment_type==='employee'?'accent':'neutral'}`} style={{ fontSize:10 }}>{c.employment_type||'contractor'}</span>
                     {' '}
                     <span className={`badge badge-${c.status==='active'?'success':'neutral'}`} style={{ fontSize:10 }}>{c.status}</span>
                   </div>
@@ -96,12 +115,8 @@ export default function CollectorsPage() {
                 {c.phone && <span style={{ display:'flex', alignItems:'center', gap:6 }}><Phone size={11} />{c.phone}</span>}
                 {c.email && <span style={{ display:'flex', alignItems:'center', gap:6 }}><Mail size={11} />{c.email}</span>}
               </div>
-              <div style={{ display:'flex', justifyContent:'space-between', marginTop:14, paddingTop:12, borderTop:'1px solid var(--border2)', fontSize:12 }}>
-                <span style={{ color:'var(--muted)' }}>Runs: <strong style={{ color:'var(--text)' }}>{c.runs_total||0}</strong></span>
-                <span style={{ color:'var(--muted)' }}>This month: <strong style={{ color:'var(--accent)' }}>${(c.earnings_month||0).toFixed(0)}</strong></span>
-              </div>
-              {c.document_expiry && (
-                <div style={{ marginTop:10 }}>{docExpiryStatus(c.document_expiry)}</div>
+              {c.abn && (
+                <div style={{ marginTop:10, fontSize:11, color:'var(--muted)' }}>ABN: {c.abn}</div>
               )}
             </div>
           ))}
@@ -118,14 +133,20 @@ export default function CollectorsPage() {
               <button className="btn-ghost" onClick={()=>setShowInvite(false)} style={{ padding:'4px 8px' }}><X size={14} /></button>
             </div>
             <form onSubmit={handleInvite}>
-              <div style={{ marginBottom:12 }}>
-                <label className="nura-label">Full Name *</label>
-                <input className="nura-input" value={form.name} onChange={e=>setForm(p=>({...p,name:e.target.value}))} required />
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
+                <div>
+                  <label className="nura-label">First Name *</label>
+                  <input className="nura-input" value={form.first_name} onChange={e=>setForm(p=>({...p,first_name:e.target.value}))} required />
+                </div>
+                <div>
+                  <label className="nura-label">Last Name *</label>
+                  <input className="nura-input" value={form.last_name} onChange={e=>setForm(p=>({...p,last_name:e.target.value}))} required />
+                </div>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
                 <div>
                   <label className="nura-label">Type</label>
-                  <select className="nura-select" value={form.type} onChange={e=>setForm(p=>({...p,type:e.target.value}))}>
+                  <select className="nura-select" value={form.employment_type} onChange={e=>setForm(p=>({...p,employment_type:e.target.value}))}>
                     <option value="contractor">Contractor</option>
                     <option value="employee">Employee</option>
                   </select>
@@ -147,8 +168,8 @@ export default function CollectorsPage() {
                 <input className="nura-input" type="email" value={form.email} onChange={e=>setForm(p=>({...p,email:e.target.value}))} />
               </div>
               <div style={{ marginBottom:20 }}>
-                <label className="nura-label">Document Expiry</label>
-                <input className="nura-input" type="date" value={form.document_expiry} onChange={e=>setForm(p=>({...p,document_expiry:e.target.value}))} />
+                <label className="nura-label">ABN</label>
+                <input className="nura-input" placeholder="XX XXX XXX XXX" value={form.abn} onChange={e=>setForm(p=>({...p,abn:e.target.value}))} />
               </div>
               <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={()=>setShowInvite(false)}>Cancel</button>
@@ -162,53 +183,94 @@ export default function CollectorsPage() {
       {/* Profile modal */}
       {selected && (
         <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setSelected(null)}>
-          <div className="modal-card" style={{ maxWidth:520 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22 }}>
+          <div className="modal-card" style={{ maxWidth:560 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:18 }}>
               <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <div className="collector-avatar" style={{ width:48,height:48,fontSize:17 }}>{initials(selected.name)}</div>
+                <div className="collector-avatar" style={{ width:48,height:48,fontSize:17 }}>{initials(selected.first_name, selected.last_name)}</div>
                 <div>
-                  <div className="modal-title" style={{ marginBottom:2 }}>{selected.name}</div>
+                  <div className="modal-title" style={{ marginBottom:2 }}>{fullName(selected)}</div>
                   <div style={{ fontSize:11, color:'var(--muted)' }}>{selected.email}</div>
                 </div>
               </div>
               <button className="btn-ghost" onClick={()=>setSelected(null)} style={{ padding:'4px 8px' }}><X size={14} /></button>
             </div>
-            <form onSubmit={handleUpdate}>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                {[['name','Full Name'],['email','Email'],['phone','Phone']].map(([f,l])=>(
-                  <div key={f} style={{ gridColumn: f==='name'?'1/-1':'auto' }}>
-                    <label className="nura-label">{l}</label>
-                    <input className="nura-input" value={editForm[f]||''} onChange={e=>setEditForm(p=>({...p,[f]:e.target.value}))} />
+
+            <div className="tab-bar" style={{ marginBottom:18 }}>
+              <button className={`tab-item${runsheetTab==='profile'?' active':''}`} onClick={()=>setRunsheetTab('profile')}>Profile</button>
+              <button className={`tab-item${runsheetTab==='runsheet'?' active':''}`} onClick={()=>setRunsheetTab('runsheet')}>Runsheet ({runsheet.length})</button>
+            </div>
+
+            {runsheetTab === 'profile' ? (
+              <form onSubmit={handleUpdate}>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+                  <div>
+                    <label className="nura-label">First Name</label>
+                    <input className="nura-input" value={editForm.first_name||''} onChange={e=>setEditForm(p=>({...p,first_name:e.target.value}))} />
                   </div>
-                ))}
-                <div>
-                  <label className="nura-label">Type</label>
-                  <select className="nura-select" value={editForm.type||'contractor'} onChange={e=>setEditForm(p=>({...p,type:e.target.value}))}>
-                    <option value="contractor">Contractor</option>
-                    <option value="employee">Employee</option>
-                  </select>
+                  <div>
+                    <label className="nura-label">Last Name</label>
+                    <input className="nura-input" value={editForm.last_name||''} onChange={e=>setEditForm(p=>({...p,last_name:e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="nura-label">Email</label>
+                    <input className="nura-input" value={editForm.email||''} onChange={e=>setEditForm(p=>({...p,email:e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="nura-label">Phone</label>
+                    <input className="nura-input" value={editForm.phone||''} onChange={e=>setEditForm(p=>({...p,phone:e.target.value}))} />
+                  </div>
+                  <div>
+                    <label className="nura-label">Type</label>
+                    <select className="nura-select" value={editForm.employment_type||'contractor'} onChange={e=>setEditForm(p=>({...p,employment_type:e.target.value}))}>
+                      <option value="contractor">Contractor</option>
+                      <option value="employee">Employee</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="nura-label">Status</label>
+                    <select className="nura-select" value={editForm.status||'active'} onChange={e=>setEditForm(p=>({...p,status:e.target.value}))}>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                    </select>
+                  </div>
+                  <div style={{ gridColumn:'1/-1' }}>
+                    <label className="nura-label">ABN</label>
+                    <input className="nura-input" value={editForm.abn||''} onChange={e=>setEditForm(p=>({...p,abn:e.target.value}))} />
+                  </div>
                 </div>
-                <div>
-                  <label className="nura-label">Status</label>
-                  <select className="nura-select" value={editForm.status||'active'} onChange={e=>setEditForm(p=>({...p,status:e.target.value}))}>
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive</option>
-                  </select>
+                <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
+                  <button type="button" className="btn-ghost" onClick={()=>setSelected(null)}>Cancel</button>
+                  <button type="submit" className="btn-mint" disabled={saving}>{saving?'Saving…':'Save Changes'}</button>
                 </div>
-                <div style={{ gridColumn:'1/-1' }}>
-                  <label className="nura-label">Document Expiry</label>
-                  <input className="nura-input" type="date" value={editForm.document_expiry||''} onChange={e=>setEditForm(p=>({...p,document_expiry:e.target.value}))} />
+              </form>
+            ) : (
+              <div>
+                {runsheet.length === 0 ? (
+                  <div className="empty-state" style={{ padding:'24px 0' }}>No bookings assigned yet</div>
+                ) : (
+                  <table className="nura-table">
+                    <thead><tr>
+                      <th>Patient</th><th>Service</th><th>Date</th><th>Time</th><th>Status</th><th>Amount</th>
+                    </tr></thead>
+                    <tbody>
+                      {runsheet.map(b => (
+                        <tr key={b.id}>
+                          <td style={{ fontWeight:500, fontSize:12 }}>{b.first_name} {b.last_name}</td>
+                          <td style={{ fontSize:11, color:'var(--muted)' }}>{b.service_type}</td>
+                          <td style={{ fontSize:11 }}>{b.scheduled_date}</td>
+                          <td style={{ fontSize:11, color:'var(--muted)' }}>{TIME_LABELS[b.scheduled_time]||b.scheduled_time||'—'}</td>
+                          <td><span className={`badge badge-${b.status==='completed'?'success':b.status==='confirmed'?'accent':'warning'}`} style={{ fontSize:10 }}>{b.status}</span></td>
+                          <td style={{ fontSize:12, color:'var(--accent)' }}>${parseFloat(b.amount_charged||0).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+                  <button className="btn-ghost" onClick={()=>setSelected(null)}>Close</button>
                 </div>
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginTop:12, padding:'12px', background:'var(--card2)', borderRadius:8 }}>
-                <div style={{ fontSize:12 }}><div className="nura-label">Total Runs</div><strong style={{ color:'var(--accent)' }}>{selected.runs_total||0}</strong></div>
-                <div style={{ fontSize:12 }}><div className="nura-label">Earnings This Month</div><strong style={{ color:'var(--accent)' }}>${(selected.earnings_month||0).toFixed(2)}</strong></div>
-              </div>
-              <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
-                <button type="button" className="btn-ghost" onClick={()=>setSelected(null)}>Cancel</button>
-                <button type="submit" className="btn-mint" disabled={saving}>{saving?'Saving…':'Save Changes'}</button>
-              </div>
-            </form>
+            )}
           </div>
         </div>
       )}

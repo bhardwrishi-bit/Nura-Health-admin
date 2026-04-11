@@ -2,9 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const SLOTS = ['full', 'am', 'pm', 'off'];
-const SLOT_LABELS = { full:'FULL', am:'AM', pm:'PM', off:'OFF', null:'–' };
-const SLOT_CLASS = { full:'avail-full', am:'avail-am', pm:'avail-pm', off:'avail-off' };
+// Real slot values from Supabase `availability` table
+const SLOTS = ['full_day', 'am_only', 'pm_only', 'unavailable'];
+const SLOT_LABELS = { full_day:'FULL', am_only:'AM', pm_only:'PM', unavailable:'OFF' };
+const SLOT_CLASS  = { full_day:'avail-full', am_only:'avail-am', pm_only:'avail-pm', unavailable:'avail-off' };
 
 function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate()+n); return r; }
 function fmtDate(d) { return d.toISOString().split('T')[0]; }
@@ -26,14 +27,15 @@ export default function AvailabilityPage() {
     const endStr   = fmtDate(addDays(weekStart, 27));
 
     const [cRes, aRes] = await Promise.all([
-      supabase.from('collectors').select('id, name').eq('status','active').order('name'),
-      supabase.from('collector_availability').select('*').gte('date', startStr).lte('date', endStr),
+      supabase.from('collectors').select('id, first_name, last_name').eq('status','active').order('first_name'),
+      // Real table: availability, real date field: available_date
+      supabase.from('availability').select('*').gte('available_date', startStr).lte('available_date', endStr),
     ]);
 
     setCollectors(cRes.data || []);
 
     const map = {};
-    (aRes.data || []).forEach(r => { map[`${r.collector_id}-${r.date}`] = r.slot; });
+    (aRes.data || []).forEach(r => { map[`${r.collector_id}-${r.available_date}`] = r.slot; });
     setAvail(map);
     setLoading(false);
   }, [weekStart]);
@@ -41,7 +43,7 @@ export default function AvailabilityPage() {
   useEffect(() => {
     fetchData();
     const ch = supabase.channel('avail-page')
-      .on('postgres_changes', { event:'*', schema:'public', table:'collector_availability' }, fetchData)
+      .on('postgres_changes', { event:'*', schema:'public', table:'availability' }, fetchData)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [fetchData]);
@@ -49,17 +51,20 @@ export default function AvailabilityPage() {
   const cycleSlot = async (collectorId, date) => {
     const key = `${collectorId}-${date}`;
     const current = avail[key] || null;
-    const next = SLOTS[(SLOTS.indexOf(current ?? 'off') + 1) % SLOTS.length];
+    const nextIndex = (SLOTS.indexOf(current ?? 'unavailable') + 1) % SLOTS.length;
+    const next = SLOTS[nextIndex];
 
     setAvail(prev => ({ ...prev, [key]: next }));
 
-    await supabase.from('collector_availability').upsert(
-      { collector_id: collectorId, date, slot: next },
-      { onConflict: 'collector_id,date' }
+    await supabase.from('availability').upsert(
+      { collector_id: collectorId, available_date: date, slot: next },
+      { onConflict: 'collector_id,available_date' }
     );
   };
 
   const weeks = [0,1,2,3].map(w => dates.slice(w*7, w*7+7));
+
+  const collectorName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ');
 
   return (
     <div>
@@ -76,7 +81,7 @@ export default function AvailabilityPage() {
 
       {/* Legend */}
       <div style={{ display:'flex', gap:12, marginBottom:20, fontSize:11 }}>
-        {[['avail-full','Full day'],['avail-am','AM only'],['avail-pm','PM only'],['avail-off','Off']].map(([cls,lbl])=>(
+        {[['avail-full','Full day'],['avail-am','AM only'],['avail-pm','PM only'],['avail-off','Unavailable']].map(([cls,lbl])=>(
           <div key={cls} style={{ display:'flex', alignItems:'center', gap:5 }}>
             <div style={{ width:16, height:12, borderRadius:3 }} className={cls} />
             <span style={{ color:'var(--muted)' }}>{lbl}</span>
@@ -111,7 +116,7 @@ export default function AvailabilityPage() {
                   <tbody>
                     {collectors.map(c => (
                       <tr key={c.id}>
-                        <td style={{ padding:'4px 12px 4px 0', fontSize:12, color:'var(--text)', whiteSpace:'nowrap' }}>{c.name}</td>
+                        <td style={{ padding:'4px 12px 4px 0', fontSize:12, color:'var(--text)', whiteSpace:'nowrap' }}>{collectorName(c)}</td>
                         {week.map(d => {
                           const dateStr = fmtDate(d);
                           const slot = avail[`${c.id}-${dateStr}`] || null;
@@ -120,9 +125,9 @@ export default function AvailabilityPage() {
                               <button
                                 className={`avail-cell ${slot ? SLOT_CLASS[slot] : 'avail-null'}`}
                                 onClick={() => cycleSlot(c.id, dateStr)}
-                                title={SLOT_LABELS[slot] || '–'}
+                                title={slot ? SLOT_LABELS[slot] : '–'}
                               >
-                                {SLOT_LABELS[slot] || '–'}
+                                {slot ? SLOT_LABELS[slot] : '–'}
                               </button>
                             </td>
                           );

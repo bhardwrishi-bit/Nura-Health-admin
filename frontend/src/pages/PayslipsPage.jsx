@@ -9,6 +9,8 @@ const statusBadge = (s) => {
   return <span className={`badge badge-${map[s]||'neutral'}`}>{s}</span>;
 };
 
+const collectorName = (c) => c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '—';
+
 export default function PayslipsPage() {
   const [payslips, setPayslips] = useState([]);
   const [collectors, setCollectors] = useState([]);
@@ -20,8 +22,9 @@ export default function PayslipsPage() {
 
   const fetchData = async () => {
     const [pRes, cRes, bRes] = await Promise.all([
-      supabase.from('collector_payslips').select('*, collectors(name)').order('created_at', { ascending:false }),
-      supabase.from('collectors').select('id, name').order('name'),
+      // Real table: payslips (not collector_payslips)
+      supabase.from('payslips').select('*, collectors(id, first_name, last_name)').order('created_at', { ascending:false }),
+      supabase.from('collectors').select('id, first_name, last_name').order('first_name'),
       supabase.from('patient_bookings').select('collector_id, amount_charged, status, scheduled_date'),
     ]);
     setPayslips(pRes.data || []);
@@ -33,7 +36,7 @@ export default function PayslipsPage() {
   useEffect(() => {
     fetchData();
     const ch = supabase.channel('payslips-page')
-      .on('postgres_changes', { event:'*', schema:'public', table:'collector_payslips' }, fetchData)
+      .on('postgres_changes', { event:'*', schema:'public', table:'payslips' }, fetchData)
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, []);
@@ -52,21 +55,21 @@ export default function PayslipsPage() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
-    await supabase.from('collector_payslips').insert(form);
+    await supabase.from('payslips').insert(form);
     setSaving(false);
     setShowModal(false);
     setForm(EMPTY_FORM);
   };
 
   const updateStatus = async (id, status) => {
-    await supabase.from('collector_payslips').update({ status }).eq('id', id);
+    await supabase.from('payslips').update({ status }).eq('id', id);
   };
 
   const downloadPayslip = (p) => {
-    const collector = collectors.find(c=>c.id===p.collector_id);
+    const name = collectorName(p.collectors);
     const html = `<!DOCTYPE html>
 <html><head><meta charset="UTF-8">
-<title>Payslip — ${collector?.name}</title>
+<title>Payslip — ${name}</title>
 <style>
   body { font-family: Arial, sans-serif; margin: 40px; color: #111; }
   .header { display: flex; justify-content: space-between; margin-bottom: 32px; border-bottom: 2px solid #2B3879; padding-bottom: 16px; }
@@ -78,7 +81,7 @@ export default function PayslipsPage() {
 </style></head><body>
 <div class="header">
   <div><div class="title">Nura Health</div><div>Payslip</div></div>
-  <div><div>${collector?.name}</div><div>Period: ${p.period_start} – ${p.period_end}</div></div>
+  <div><div>${name}</div><div>Period: ${p.period_start} – ${p.period_end}</div></div>
 </div>
 <table class="table">
   <tr><th>Description</th><th>Runs</th><th>Amount</th></tr>
@@ -113,7 +116,7 @@ export default function PayslipsPage() {
             <tbody>
               {payslips.map(p => (
                 <tr key={p.id}>
-                  <td style={{ fontWeight:500 }}>{p.collectors?.name}</td>
+                  <td style={{ fontWeight:500 }}>{collectorName(p.collectors)}</td>
                   <td style={{ fontSize:12 }}>{p.period_start} – {p.period_end}</td>
                   <td>{p.total_runs}</td>
                   <td style={{ color:'var(--accent)' }}>${parseFloat(p.total_amount).toFixed(2)}</td>
@@ -121,13 +124,15 @@ export default function PayslipsPage() {
                     <select
                       className="nura-select"
                       style={{ width:'auto', fontSize:11, padding:'4px 8px' }}
-                      value={p.status}
+                      value={p.status||'draft'}
                       onChange={e => updateStatus(p.id, e.target.value)}
                     >
                       {['draft','sent','paid'].map(s=><option key={s} value={s}>{s}</option>)}
                     </select>
                   </td>
-                  <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(p.generated_at).toLocaleDateString('en-AU')}</td>
+                  <td style={{ fontSize:11, color:'var(--muted)' }}>
+                    {new Date(p.generated_at || p.created_at).toLocaleDateString('en-AU')}
+                  </td>
                   <td>
                     <button className="btn-ghost" style={{ padding:'4px 10px', fontSize:11 }} onClick={()=>downloadPayslip(p)}>
                       <Download size={12} /> PDF
@@ -152,7 +157,7 @@ export default function PayslipsPage() {
                 <label className="nura-label">Collector *</label>
                 <select className="nura-select" value={form.collector_id} onChange={e=>setForm(p=>({...p,collector_id:e.target.value}))} required>
                   <option value="">Select collector…</option>
-                  {collectors.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  {collectors.map(c=><option key={c.id} value={c.id}>{collectorName(c)}</option>)}
                 </select>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>

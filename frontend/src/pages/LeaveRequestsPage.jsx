@@ -2,13 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Plus, X } from 'lucide-react';
 
-const LEAVE_TYPES = ['Annual Leave','Sick Leave','Personal Leave','Carer\'s Leave','Public Holiday'];
-const EMPTY_FORM = { collector_id:'', leave_type:'Annual Leave', start_date:'', end_date:'', notes:'' };
+// Real leave_type values from Supabase `leave_requests` table
+const LEAVE_TYPES = ['annual', 'sick', 'personal', 'other'];
+const LEAVE_TYPE_LABELS = {
+  annual: 'Annual Leave',
+  sick: 'Sick Leave',
+  personal: 'Personal Leave',
+  other: 'Other',
+};
+
+const EMPTY_FORM = { collector_id:'', leave_type:'annual', start_date:'', end_date:'', reason:'' };
 
 const statusBadge = (s) => {
   const map = { pending:'warning', approved:'success', declined:'danger' };
   return <span className={`badge badge-${map[s]||'neutral'}`}>{s}</span>;
 };
+
+const collectorName = (c) => c ? [c.first_name, c.last_name].filter(Boolean).join(' ') : '—';
 
 export default function LeaveRequestsPage() {
   const [requests, setRequests] = useState([]);
@@ -21,8 +31,14 @@ export default function LeaveRequestsPage() {
 
   const fetchData = async () => {
     const [rRes, cRes] = await Promise.all([
-      supabase.from('leave_requests').select('*, collectors(name)').order('submitted_at', { ascending:false }),
-      supabase.from('collectors').select('id, name').eq('status','active').order('name'),
+      // Join collectors with first_name/last_name (not name)
+      supabase.from('leave_requests')
+        .select('*, collectors(id, first_name, last_name)')
+        .order('submitted_at', { ascending:false }),
+      supabase.from('collectors')
+        .select('id, first_name, last_name')
+        .eq('status','active')
+        .order('first_name'),
     ]);
     setRequests(rRes.data || []);
     setCollectors(cRes.data || []);
@@ -44,15 +60,19 @@ export default function LeaveRequestsPage() {
   const handleCreate = async (e) => {
     e.preventDefault();
     setSaving(true);
+    // Use `reason` field (not `notes`) per actual schema
     await supabase.from('leave_requests').insert(form);
     setSaving(false);
     setShowModal(false);
     setForm(EMPTY_FORM);
   };
 
-  const days = (start, end) => {
-    if (!start || !end) return 0;
-    return Math.ceil((new Date(end) - new Date(start)) / 86400000) + 1;
+  // Use working_days from DB if available, otherwise calculate from dates
+  const displayDays = (r) => {
+    if (r.working_days != null) return `${r.working_days}d`;
+    if (!r.start_date || !r.end_date) return '—';
+    const d = Math.ceil((new Date(r.end_date) - new Date(r.start_date)) / 86400000) + 1;
+    return `${d}d`;
   };
 
   const filtered = tab === 'pending' ? requests.filter(r=>r.status==='pending') : requests;
@@ -79,17 +99,20 @@ export default function LeaveRequestsPage() {
         ) : (
           <table className="nura-table">
             <thead><tr>
-              <th>Collector</th><th>Type</th><th>Period</th><th>Days</th><th>Status</th><th>Submitted</th><th>Actions</th>
+              <th>Collector</th><th>Type</th><th>Period</th><th>Days</th><th>Reason</th><th>Status</th><th>Submitted</th><th>Actions</th>
             </tr></thead>
             <tbody>
               {filtered.map(r => (
                 <tr key={r.id}>
-                  <td style={{ fontWeight:500 }}>{r.collectors?.name || '—'}</td>
-                  <td style={{ fontSize:12 }}>{r.leave_type}</td>
-                  <td style={{ fontSize:12 }}>{r.start_date} → {r.end_date}</td>
-                  <td style={{ fontSize:12 }}>{days(r.start_date, r.end_date)}d</td>
+                  <td style={{ fontWeight:500 }}>{collectorName(r.collectors)}</td>
+                  <td style={{ fontSize:12 }}>{LEAVE_TYPE_LABELS[r.leave_type]||r.leave_type}</td>
+                  <td style={{ fontSize:12, whiteSpace:'nowrap' }}>{r.start_date} → {r.end_date}</td>
+                  <td style={{ fontSize:12 }}>{displayDays(r)}</td>
+                  <td style={{ fontSize:11, color:'var(--muted)', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.reason||'—'}</td>
                   <td>{statusBadge(r.status)}</td>
-                  <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(r.submitted_at).toLocaleDateString('en-AU')}</td>
+                  <td style={{ fontSize:11, color:'var(--muted)', whiteSpace:'nowrap' }}>
+                    {r.submitted_at ? new Date(r.submitted_at).toLocaleDateString('en-AU') : '—'}
+                  </td>
                   <td>
                     {r.status === 'pending' && (
                       <div style={{ display:'flex', gap:6 }}>
@@ -117,13 +140,13 @@ export default function LeaveRequestsPage() {
                 <label className="nura-label">Collector *</label>
                 <select className="nura-select" value={form.collector_id} onChange={e=>setForm(p=>({...p,collector_id:e.target.value}))} required>
                   <option value="">Select collector…</option>
-                  {collectors.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                  {collectors.map(c=><option key={c.id} value={c.id}>{collectorName(c)}</option>)}
                 </select>
               </div>
               <div style={{ marginBottom:12 }}>
                 <label className="nura-label">Leave Type</label>
                 <select className="nura-select" value={form.leave_type} onChange={e=>setForm(p=>({...p,leave_type:e.target.value}))}>
-                  {LEAVE_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                  {LEAVE_TYPES.map(t=><option key={t} value={t}>{LEAVE_TYPE_LABELS[t]}</option>)}
                 </select>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:12 }}>
@@ -137,8 +160,9 @@ export default function LeaveRequestsPage() {
                 </div>
               </div>
               <div style={{ marginBottom:20 }}>
-                <label className="nura-label">Notes</label>
-                <textarea className="nura-input" rows={2} value={form.notes} onChange={e=>setForm(p=>({...p,notes:e.target.value}))} style={{ resize:'vertical' }} />
+                <label className="nura-label">Reason</label>
+                {/* Use `reason` field (not `notes`) per actual schema */}
+                <textarea className="nura-input" rows={2} value={form.reason} onChange={e=>setForm(p=>({...p,reason:e.target.value}))} style={{ resize:'vertical' }} />
               </div>
               <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
                 <button type="button" className="btn-ghost" onClick={()=>setShowModal(false)}>Cancel</button>
