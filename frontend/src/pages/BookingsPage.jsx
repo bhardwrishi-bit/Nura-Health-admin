@@ -30,10 +30,11 @@ export default function BookingsPage() {
   const [saving, setSaving] = useState(false);
 
   const fetchBookings = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('patient_bookings')
       .select('*, collectors(id, first_name, last_name)')
       .order('created_at', { ascending:false });
+    console.log('[BookingsPage] data:', data, '| error:', error);
     setBookings(data || []);
     setLoading(false);
   };
