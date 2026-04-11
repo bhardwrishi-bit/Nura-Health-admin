@@ -21,9 +21,16 @@ export default function OverviewPage() {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const today = new Date().toISOString().split('T')[0];
+  // Use Brisbane/Sydney local date (AEST UTC+10, no DST)
+  const toAESTDateString = (d) => {
+    const aest = new Date(d.getTime() + 10 * 60 * 60 * 1000);
+    return aest.toISOString().split('T')[0];
+  };
+  const today = toAESTDateString(new Date());
   const weekStart = (() => {
-    const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().split('T')[0];
+    const d = new Date();
+    d.setDate(d.getDate() - d.getDay());
+    return toAESTDateString(d);
   })();
 
   const fetchData = async () => {
@@ -51,8 +58,9 @@ export default function OverviewPage() {
 
     const alertItems = [];
     bookings.forEach(b => {
-      if (!b.prescription_url && b.referral_uploaded) {
-        alertItems.push({ type: 'warning', msg: `Missing prescription: ${b.first_name} ${b.last_name} (${b.booking_ref || b.id?.slice(0,8)})` });
+      // referral_uploaded means patient uploaded referral but prescription file not yet filed by admin
+      if (b.referral_uploaded === false && ['confirmed','pending'].includes(b.status)) {
+        alertItems.push({ type: 'warning', msg: `No referral uploaded: ${b.first_name} ${b.last_name} (${b.booking_ref || b.id?.slice(0,8)})` });
       }
       if (['failed','unpaid'].includes(b.payment_status)) {
         alertItems.push({ type: 'danger', msg: `Payment issue: ${b.first_name} ${b.last_name} — ${b.payment_status}` });
