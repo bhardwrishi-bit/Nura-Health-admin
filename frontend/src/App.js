@@ -6,6 +6,7 @@ import LoginScreen from '@/components/LoginScreen';
 import OverviewPage from '@/pages/OverviewPage';
 import BookingsPage from '@/pages/BookingsPage';
 import CollectorsPage from '@/pages/CollectorsPage';
+import PatientsPage from '@/pages/PatientsPage';
 import AvailabilityPage from '@/pages/AvailabilityPage';
 import LeaveRequestsPage from '@/pages/LeaveRequestsPage';
 import DocumentsPage from '@/pages/DocumentsPage';
@@ -49,6 +50,7 @@ function App() {
             <Route index element={<OverviewPage />} />
             <Route path="bookings" element={<BookingsPage />} />
             <Route path="collectors" element={<CollectorsPage />} />
+            <Route path="patients" element={<PatientsPage />} />
             <Route path="availability" element={<AvailabilityPage />} />
             <Route path="leave" element={<LeaveRequestsPage />} />
             <Route path="documents" element={<DocumentsPage />} />
