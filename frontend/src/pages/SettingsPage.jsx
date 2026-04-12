@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   contact_phone: '',
   service_area: '',
   pricing: { 'home-visit': 59, 'corporate': 59, 'aged-care': 59, 'ndis': 55 },
+  revenue_monthly_goal: 5000,
 };
 
 export default function SettingsPage() {
@@ -33,6 +34,9 @@ export default function SettingsPage() {
           ...data,
           abn: data.abn || DEFAULT_SETTINGS.abn,
           pricing: mergedPricing,
+          revenue_monthly_goal: data.revenue_monthly_goal != null
+            ? parseFloat(data.revenue_monthly_goal)
+            : DEFAULT_SETTINGS.revenue_monthly_goal,
         });
         setSettingsId(data.id);
       }
@@ -130,6 +134,29 @@ export default function SettingsPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Revenue Goal */}
+        <div className="nura-card" style={{ marginTop:20 }}>
+          <div style={{ fontSize:14, fontWeight:600, marginBottom:6, color:'var(--accent)' }}>Revenue Goal</div>
+          <div style={{ fontSize:12, color:'var(--muted)', marginBottom:16 }}>
+            Set a monthly revenue target to track progress on the Overview page.
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <label style={{ fontSize:13, color:'var(--text)', whiteSpace:'nowrap' }}>Monthly Revenue Target ($)</label>
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <span style={{ color:'var(--muted)', fontSize:13 }}>$</span>
+              <input
+                className="nura-input"
+                type="number"
+                min="0"
+                step="100"
+                style={{ width:120 }}
+                value={settings.revenue_monthly_goal ?? 5000}
+                onChange={e => setSettings(p => ({ ...p, revenue_monthly_goal: parseFloat(e.target.value) || 0 }))}
+              />
+            </div>
           </div>
         </div>
 

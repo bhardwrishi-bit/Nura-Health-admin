@@ -20,9 +20,10 @@ export default function OverviewPage() {
   const navigate = useNavigate();
   const [stats, setStats]     = useState({ activeToday: 0, completeToday: 0, activeCollectors: 0, weekEarnings: 0, monthRevenue: 0 });
   const [pipeline, setPipeline] = useState({ pending: 0, pendingThisWeek: 0, confirmedUnassigned: 0, confirmedAssigned: 0, assigned: 0, assignedThisWeek: 0, invoiced: 0, paid: 0 });
-  const [liveRuns, setLiveRuns] = useState([]);
-  const [alerts, setAlerts]   = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [liveRuns, setLiveRuns]     = useState([]);
+  const [alerts, setAlerts]         = useState([]);
+  const [revenueGoal, setRevenueGoal] = useState(null);
+  const [loading, setLoading]       = useState(true);
 
   // AEST date helpers (UTC+10, no DST)
   const toAESTDateString = (d) => {
@@ -59,13 +60,17 @@ export default function OverviewPage() {
   const monthLabel  = `1 ${monthShort} – ${aestNow.getUTCDate()} ${monthShort}`;
 
   const fetchData = async () => {
-    const [bookingsRes, collectorsRes] = await Promise.all([
+    const [bookingsRes, collectorsRes, settingsRes] = await Promise.all([
       supabase.from('patient_bookings').select('*').order('created_at', { ascending: false }),
       supabase.from('collectors').select('id, status'),
+      supabase.from('settings').select('revenue_monthly_goal').limit(1).single(),
     ]);
 
-    const bookings  = bookingsRes.data  || [];
+    const bookings   = bookingsRes.data  || [];
     const collectors = collectorsRes.data || [];
+
+    const goalVal = settingsRes.data?.revenue_monthly_goal;
+    setRevenueGoal(goalVal != null ? parseFloat(goalVal) : null);
 
     const todayBookings = bookings.filter(b => b.scheduled_date === today);
 
@@ -215,6 +220,69 @@ export default function OverviewPage() {
           </div>
         ))}
       </div>
+
+      {/* Monthly Revenue Goal */}
+      {revenueGoal == null ? (
+        <div style={{
+          marginBottom: 20, padding: '14px 20px',
+          background: 'var(--card)', border: '1px solid var(--border)',
+          borderRadius: 10, fontSize: 13, color: 'var(--muted)',
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <span style={{ fontSize: 16 }}>🎯</span>
+          Set a monthly revenue goal in{' '}
+          <span
+            onClick={() => navigate('/settings')}
+            style={{ color: 'var(--accent)', cursor: 'pointer', textDecoration: 'underline' }}
+          >
+            Settings
+          </span>
+          {' '}to track progress here.
+        </div>
+      ) : (() => {
+        const pct        = Math.min((stats.monthRevenue / revenueGoal) * 100, 100);
+        const goalReached = stats.monthRevenue >= revenueGoal;
+        return (
+          <div className="panel" style={{ marginBottom: 20, padding: '16px 20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--muted)', fontWeight: 600, marginBottom: 4 }}>
+                  Monthly Revenue Goal
+                </div>
+                <div>
+                  <span style={{ fontSize: 20, fontWeight: 700, color: 'var(--accent)' }}>
+                    ${stats.monthRevenue.toFixed(0)}
+                  </span>
+                  <span style={{ fontSize: 13, color: 'var(--muted)' }}>
+                    {' '}/ ${revenueGoal.toFixed(0)}
+                  </span>
+                </div>
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                {goalReached ? (
+                  <span className="badge badge-success" style={{ fontSize: 12, padding: '4px 10px' }}>
+                    Goal reached! 🎉
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--text)' }}>
+                    {pct.toFixed(0)}%
+                  </span>
+                )}
+                <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 2 }}>{monthLabel}</div>
+              </div>
+            </div>
+            <div style={{ height: 8, background: 'rgba(255,255,255,0.1)', borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${pct}%`,
+                background: '#80E5CB',
+                borderRadius: 4,
+                transition: 'width 0.6s ease',
+              }} />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Workflow Pipeline */}
       <div className="panel" style={{ marginBottom: 20 }}>
