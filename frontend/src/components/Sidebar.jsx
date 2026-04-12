@@ -22,8 +22,9 @@ const NAV = [
   {
     label: 'Compliance',
     items: [
-      { to: '/leave',     icon: Clock,    label: 'Leave Requests' },
-      { to: '/documents', icon: FileText, label: 'Documents' },
+      { to: '/leave',       icon: Clock,    label: 'Leave Requests' },
+      { to: '/timesheets',  icon: Clock,    label: 'Timesheets' },
+      { to: '/documents',   icon: FileText, label: 'Documents' },
     ],
   },
   {

@@ -9,6 +9,7 @@ import CollectorsPage from '@/pages/CollectorsPage';
 import PatientsPage from '@/pages/PatientsPage';
 import AvailabilityPage from '@/pages/AvailabilityPage';
 import LeaveRequestsPage from '@/pages/LeaveRequestsPage';
+import TimesheetsPage from '@/pages/TimesheetsPage';
 import DocumentsPage from '@/pages/DocumentsPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import PayslipsPage from '@/pages/PayslipsPage';
@@ -55,6 +56,7 @@ function App() {
             <Route path="patients" element={<PatientsPage />} />
             <Route path="availability" element={<AvailabilityPage />} />
             <Route path="leave" element={<LeaveRequestsPage />} />
+            <Route path="timesheets" element={<TimesheetsPage />} />
             <Route path="documents" element={<DocumentsPage />} />
             <Route path="invoices" element={<InvoicesPage />} />
             <Route path="payslips" element={<PayslipsPage />} />
