@@ -47,25 +47,28 @@ export default function AnalyticsPage() {
 
   // All date arithmetic in UTC to avoid timezone-shifted week keys (AEST = UTC+10)
   const weeksCount = parseInt(range) || 12;
-  const cutoff = (() => {
-    const now = new Date();
-    const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - weeksCount * 7));
-    return utc.toISOString().split('T')[0];
-  })();
+  // Window is centred on today: half the weeks go back, half go forward
+  const halfBack = Math.floor(weeksCount / 2);
 
-  const recent = bookings.filter(b => b.scheduled_date && b.scheduled_date >= cutoff);
+  const now = new Date();
+  const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const dow = todayUTC.getUTCDay(); // 0=Sun
+  const toMonday = dow === 0 ? -6 : 1 - dow;
+  const thisMonday = new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate() + toMonday));
 
-  // Pre-seeded Monday-based weekly buckets — future weeks show 0, x-axis spans full range
+  const windowStart = new Date(Date.UTC(thisMonday.getUTCFullYear(), thisMonday.getUTCMonth(), thisMonday.getUTCDate() - halfBack * 7))
+    .toISOString().split('T')[0];
+  const windowEnd = new Date(Date.UTC(thisMonday.getUTCFullYear(), thisMonday.getUTCMonth(), thisMonday.getUTCDate() + (weeksCount - halfBack) * 7 + 6))
+    .toISOString().split('T')[0];
+
+  const recent = bookings.filter(b => b.scheduled_date && b.scheduled_date >= windowStart && b.scheduled_date <= windowEnd);
+
+  // Pre-seeded Monday-based weekly buckets centred on today — past and future bookings both visible
   const weekData = (() => {
-    const now = new Date();
-    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-    const dow = todayUTC.getUTCDay(); // 0=Sun
-    const toMonday = dow === 0 ? -6 : 1 - dow;
-    const thisMonday = new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate() + toMonday));
-
     const buckets = [];
-    for (let i = weeksCount - 1; i >= 0; i--) {
-      const mon = new Date(Date.UTC(thisMonday.getUTCFullYear(), thisMonday.getUTCMonth(), thisMonday.getUTCDate() - i * 7));
+    for (let i = 0; i < weeksCount; i++) {
+      const offset = i - halfBack; // negative = past, 0 = this week, positive = future
+      const mon = new Date(Date.UTC(thisMonday.getUTCFullYear(), thisMonday.getUTCMonth(), thisMonday.getUTCDate() + offset * 7));
       const sun = new Date(Date.UTC(mon.getUTCFullYear(), mon.getUTCMonth(), mon.getUTCDate() + 6));
       buckets.push({
         startStr: mon.toISOString().split('T')[0],
