@@ -13,6 +13,7 @@ import DocumentsPage from '@/pages/DocumentsPage';
 import InvoicesPage from '@/pages/InvoicesPage';
 import PayslipsPage from '@/pages/PayslipsPage';
 import AnalyticsPage from '@/pages/AnalyticsPage';
+import SchedulePage from '@/pages/SchedulePage';
 import SettingsPage from '@/pages/SettingsPage';
 
 function App() {
@@ -49,6 +50,7 @@ function App() {
           <Route path="/" element={<Layout user={user} />}>
             <Route index element={<OverviewPage />} />
             <Route path="bookings" element={<BookingsPage />} />
+            <Route path="schedule" element={<SchedulePage />} />
             <Route path="collectors" element={<CollectorsPage />} />
             <Route path="patients" element={<PatientsPage />} />
             <Route path="availability" element={<AvailabilityPage />} />

@@ -2,7 +2,7 @@ import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { supabase } from '@/lib/supabase';
 import {
-  LayoutDashboard, Calendar, Users, UserCircle, CalendarDays,
+  LayoutDashboard, Calendar, CalendarRange, Users, UserCircle, CalendarDays,
   Clock, FileText, CreditCard, Receipt, TrendingUp,
   Settings, Zap, LogOut
 } from 'lucide-react';
@@ -13,6 +13,7 @@ const NAV = [
     items: [
       { to: '/',            icon: LayoutDashboard, label: 'Overview' },
       { to: '/bookings',    icon: Calendar,        label: 'Bookings' },
+      { to: '/schedule',    icon: CalendarRange,   label: 'Schedule' },
       { to: '/collectors',  icon: Users,           label: 'Collectors' },
       { to: '/patients',    icon: UserCircle,      label: 'Patients' },
       { to: '/availability',icon: CalendarDays,    label: 'Availability' },
