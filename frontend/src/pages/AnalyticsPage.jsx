@@ -9,18 +9,6 @@ const COLORS = ['#80E5CB','#3b82f6','#a855f7','#f59e0b','#ef4444','#22c55e'];
 
 const SERVICE_LABELS = { 'home-visit':'Home Visit', 'corporate':'Corporate', 'aged-care':'Aged Care', 'ndis':'NDIS' };
 
-function getWeekKey(dateStr) {
-  const d = new Date(dateStr);
-  const day = d.getDay();
-  const monday = new Date(d); monday.setDate(d.getDate() - day + (day===0?-6:1));
-  return monday.toISOString().split('T')[0];
-}
-
-function fmt(dateStr) {
-  const d = new Date(dateStr);
-  return `${d.getDate()}/${d.getMonth()+1}`;
-}
-
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
@@ -42,7 +30,7 @@ export default function AnalyticsPage() {
   const fetchData = async () => {
     const [bRes, cRes] = await Promise.all([
       supabase.from('patient_bookings').select('*'),
-      supabase.from('collectors').select('id, name, runs_total, earnings_month'),
+      supabase.from('collectors').select('id, first_name, last_name').eq('status', 'active'),
     ]);
     setBookings(bRes.data || []);
     setCollectors(cRes.data || []);
@@ -57,25 +45,48 @@ export default function AnalyticsPage() {
     return () => supabase.removeChannel(ch);
   }, []);
 
+  // All date arithmetic in UTC to avoid timezone-shifted week keys (AEST = UTC+10)
+  const weeksCount = parseInt(range) || 12;
   const cutoff = (() => {
-    const d = new Date();
-    const weeks = parseInt(range) || 12;
-    d.setDate(d.getDate() - weeks * 7);
-    return d.toISOString().split('T')[0];
+    const now = new Date();
+    const utc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - weeksCount * 7));
+    return utc.toISOString().split('T')[0];
   })();
 
   const recent = bookings.filter(b => b.scheduled_date && b.scheduled_date >= cutoff);
 
-  // Bookings + revenue per week
-  const weekMap = {};
-  recent.forEach(b => {
-    if (!b.scheduled_date) return;
-    const wk = getWeekKey(b.scheduled_date);
-    if (!weekMap[wk]) weekMap[wk] = { week: fmt(wk), bookings: 0, revenue: 0 };
-    weekMap[wk].bookings++;
-    weekMap[wk].revenue += parseFloat(b.amount_charged) || 0;
-  });
-  const weekData = Object.values(weekMap).sort((a,b) => a.week.localeCompare(b.week));
+  // Pre-seeded Monday-based weekly buckets — future weeks show 0, x-axis spans full range
+  const weekData = (() => {
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const dow = todayUTC.getUTCDay(); // 0=Sun
+    const toMonday = dow === 0 ? -6 : 1 - dow;
+    const thisMonday = new Date(Date.UTC(todayUTC.getUTCFullYear(), todayUTC.getUTCMonth(), todayUTC.getUTCDate() + toMonday));
+
+    const buckets = [];
+    for (let i = weeksCount - 1; i >= 0; i--) {
+      const mon = new Date(Date.UTC(thisMonday.getUTCFullYear(), thisMonday.getUTCMonth(), thisMonday.getUTCDate() - i * 7));
+      const sun = new Date(Date.UTC(mon.getUTCFullYear(), mon.getUTCMonth(), mon.getUTCDate() + 6));
+      buckets.push({
+        startStr: mon.toISOString().split('T')[0],
+        endStr:   sun.toISOString().split('T')[0],
+        week:     `${mon.getUTCDate()}/${mon.getUTCMonth() + 1}`,
+        bookings: 0,
+        revenue:  0,
+      });
+    }
+
+    bookings.forEach(b => {
+      if (!b.scheduled_date) return;
+      const bk = buckets.find(k => b.scheduled_date >= k.startStr && b.scheduled_date <= k.endStr);
+      if (bk) {
+        bk.bookings++;
+        bk.revenue += parseFloat(b.amount_charged) || 0;
+      }
+    });
+
+    return buckets.map(({ week, bookings, revenue }) => ({ week, bookings, revenue }));
+  })();
 
   // Service type breakdown
   const serviceMap = {};
@@ -85,12 +96,18 @@ export default function AnalyticsPage() {
   });
   const pieData = Object.entries(serviceMap).map(([k,v]) => ({ name: SERVICE_LABELS[k]||k, value: v }));
 
-  // Collector performance
-  const collectorData = collectors.map(c => ({
-    name: c.name.split(' ')[0],
-    runs: c.runs_total || 0,
-    earnings: c.earnings_month || 0,
-  })).sort((a,b) => b.runs - a.runs).slice(0,8);
+  // Collector performance — count bookings per collector_id from already-fetched data
+  const collectorData = (() => {
+    const runCounts = {};
+    recent.forEach(b => {
+      if (b.collector_id) runCounts[b.collector_id] = (runCounts[b.collector_id] || 0) + 1;
+    });
+    return collectors
+      .map(c => ({ name: `${c.first_name} ${c.last_name}`, runs: runCounts[c.id] || 0 }))
+      .filter(c => c.runs > 0)
+      .sort((a, b) => b.runs - a.runs)
+      .slice(0, 8);
+  })();
 
   const totalRevenue = recent.reduce((s,b) => s + (parseFloat(b.amount_charged)||0), 0);
   const avgPerBooking = recent.length ? totalRevenue / recent.length : 0;
@@ -197,7 +214,7 @@ export default function AnalyticsPage() {
         <div className="panel">
           <div className="panel-header">Collector Performance (Runs)</div>
           <div style={{ padding:'16px' }}>
-            {collectorData.length === 0 ? <div className="empty-state" style={{ padding:32 }}>No collector data</div> : (
+            {collectorData.length === 0 ? <div className="empty-state" style={{ padding:32 }}>No data yet</div> : (
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={collectorData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border2)" />

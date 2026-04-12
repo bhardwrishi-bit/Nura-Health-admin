@@ -4,11 +4,11 @@ import { Save } from 'lucide-react';
 
 const DEFAULT_SETTINGS = {
   business_name: 'Nura Health',
-  abn: '',
+  abn: '80 126 969 531',
   contact_email: 'hello@nurahealth.com.au',
   contact_phone: '',
   service_area: '',
-  pricing: { 'home-visit': 0, 'corporate': 0, 'aged-care': 0, 'ndis': 0 },
+  pricing: { 'home-visit': 59, 'corporate': 59, 'aged-care': 59, 'ndis': 55 },
 };
 
 export default function SettingsPage() {
@@ -22,7 +22,18 @@ export default function SettingsPage() {
     const fetchSettings = async () => {
       const { data } = await supabase.from('settings').select('*').limit(1).single();
       if (data) {
-        setSettings({ ...DEFAULT_SETTINGS, ...data, pricing: data.pricing || DEFAULT_SETTINGS.pricing });
+        // Merge DB values over defaults; fall back to default for null/0 fields
+        const dbPricing = data.pricing || {};
+        const mergedPricing = {};
+        for (const key of Object.keys(DEFAULT_SETTINGS.pricing)) {
+          mergedPricing[key] = dbPricing[key] || DEFAULT_SETTINGS.pricing[key];
+        }
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...data,
+          abn: data.abn || DEFAULT_SETTINGS.abn,
+          pricing: mergedPricing,
+        });
         setSettingsId(data.id);
       }
       setLoading(false);

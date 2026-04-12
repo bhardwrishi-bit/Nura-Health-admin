@@ -59,7 +59,7 @@ export default function OverviewPage() {
     const alertItems = [];
     bookings.forEach(b => {
       // referral_uploaded means patient uploaded referral but prescription file not yet filed by admin
-      if (b.referral_uploaded === false && ['confirmed','pending'].includes(b.status)) {
+      if (b.referral_uploaded === false && b.status !== 'cancelled') {
         alertItems.push({ type: 'warning', msg: `No referral uploaded: ${b.first_name} ${b.last_name} (${b.booking_ref || b.id?.slice(0,8)})` });
       }
       if (['failed','unpaid'].includes(b.payment_status)) {
