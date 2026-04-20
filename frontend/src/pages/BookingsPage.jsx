@@ -6,6 +6,7 @@ const STATUS_OPTIONS = ['pending','confirmed','completed','cancelled','pending_p
 const SERVICE_OPTIONS = ['home-visit','corporate','aged-care','ndis'];
 const TIME_OPTIONS = ['morning-early','morning-late','afternoon-early','afternoon-late','evening'];
 const TIME_LABELS = { 'morning-early':'7–9 AM','morning-late':'9–11 AM','afternoon-early':'11 AM–1 PM','afternoon-late':'1–3 PM','evening':'3–5 PM' };
+const TIME_SLOT_TO_TIME = { 'morning-early':'07:00','morning-late':'09:00','afternoon-early':'11:00','afternoon-late':'13:00','evening':'15:00' };
 
 const statusBadge = (s) => {
   const map = { confirmed:'accent', completed:'success', pending:'warning', cancelled:'danger', pending_payment:'warning' };
@@ -73,6 +74,7 @@ export default function BookingsPage() {
       ...form,
       booking_ref,
       amount_charged: parseFloat(form.amount_charged)||0,
+      scheduled_time: TIME_SLOT_TO_TIME[form.scheduled_time] || form.scheduled_time,
     });
     setSaving(false);
     setShowModal(false);
