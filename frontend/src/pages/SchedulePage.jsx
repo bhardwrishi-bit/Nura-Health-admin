@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ExportRunSheetButton, ExportAllRunSheetsButton } from '@/components/schedule/RunSheetExport';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
@@ -259,6 +260,20 @@ function DayView({ dayStr, collectors, bookings }) {
               </th>
             ))}
           </tr>
+          {/* Export row — one button per collector */}
+          <tr>
+            <td style={{ padding: '6px 12px', borderBottom: '1px solid var(--border2)', position: 'sticky', left: 0, background: 'var(--card)', zIndex: 1 }} />
+            {collectors.map(c => (
+              <td key={c.id} style={{ padding: '6px 10px', borderBottom: '1px solid var(--border2)', borderLeft: '1px solid var(--border2)', textAlign: 'center' }}>
+                <ExportRunSheetButton
+                  collectorId={c.id}
+                  collectorName={`${c.first_name || ''} ${c.last_name || ''}`.trim()}
+                  date={dayStr}
+                  bookings={bookings}
+                />
+              </td>
+            ))}
+          </tr>
         </thead>
         <tbody>
           {TIME_BANDS.map(band => (
@@ -378,7 +393,7 @@ export default function SchedulePage() {
         .eq('status', 'active')
         .order('first_name'),
       supabase.from('patient_bookings')
-        .select('id, booking_ref, first_name, last_name, service_type, scheduled_date, scheduled_time, address, suburb, status, collector_id, amount_charged, invoice_status')
+        .select('id, booking_ref, first_name, last_name, service_type, scheduled_date, scheduled_time, address, suburb, state, postcode, phone, date_of_birth, referral_uploaded, special_notes, status, collector_id, amount_charged, invoice_status')
         .gte('scheduled_date', rangeStart)
         .lte('scheduled_date', rangeEnd)
         .not('collector_id', 'is', null)
@@ -481,6 +496,13 @@ export default function SchedulePage() {
               <option key={c.id} value={c.id}>{c.first_name} {c.last_name}</option>
             ))}
           </select>
+
+          {/* Export All Run Sheets */}
+          <ExportAllRunSheetsButton
+            collectors={visibleCollectors}
+            date={dayStr}
+            bookings={bookings}
+          />
         </div>
       </div>
 
