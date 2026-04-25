@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Plus, Phone, Mail, X } from 'lucide-react';
+import { Plus, Phone, Mail, X, Copy, Check, KeyRound, LogIn } from 'lucide-react';
+
+const SUPABASE_FUNCTIONS_URL = 'https://yxoqvzypgvkdabqnwacs.supabase.co/functions/v1';
 
 const EMPTY_FORM = { first_name:'', last_name:'', employment_type:'contractor', status:'active', phone:'', email:'', abn:'' };
 
@@ -11,6 +13,12 @@ const initials = (first, last) => {
 };
 
 const fullName = (c) => [c.first_name, c.last_name].filter(Boolean).join(' ') || '—';
+
+// Generate a random password: letters + digits + a couple of symbols
+const generatePassword = () => {
+  const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$';
+  return Array.from({ length: 12 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+};
 
 export default function CollectorsPage() {
   const [collectors, setCollectors] = useState([]);
@@ -23,6 +31,15 @@ export default function CollectorsPage() {
   const [saving, setSaving] = useState(false);
   const [runsheet, setRunsheet] = useState([]);
   const [runsheetTab, setRunsheetTab] = useState('profile'); // 'profile' | 'runsheet'
+
+  // Login modal state
+  const [loginModal, setLoginModal] = useState(null); // 'create' | 'reset' | null
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginSaving, setLoginSaving] = useState(false);
+  const [loginError, setLoginError] = useState(null);
+  const [loginSuccess, setLoginSuccess] = useState(null); // confirmation message after success
+  const [copied, setCopied] = useState(false);
 
   const fetchCollectors = async () => {
     try {
@@ -59,6 +76,8 @@ export default function CollectorsPage() {
     setSelected(c);
     setEditForm({ ...c });
     setRunsheetTab('profile');
+    setLoginModal(null);
+    setLoginSuccess(null);
     // Load bookings assigned to this collector
     const { data } = await supabase
       .from('patient_bookings')
@@ -74,6 +93,96 @@ export default function CollectorsPage() {
     await supabase.from('collectors').update(editForm).eq('id', selected.id);
     setSaving(false);
     setSelected(null);
+  };
+
+  const openLoginModal = (type) => {
+    setLoginModal(type);
+    setLoginEmail(selected?.email || '');
+    setLoginPassword(generatePassword());
+    setLoginError(null);
+    setLoginSuccess(null);
+    setCopied(false);
+  };
+
+  const closeLoginModal = () => {
+    setLoginModal(null);
+    setLoginError(null);
+    setLoginSuccess(null);
+  };
+
+  const copyPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(loginPassword);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // fallback: select the input
+    }
+  };
+
+  const handleCreateLogin = async (e) => {
+    e.preventDefault();
+    setLoginSaving(true);
+    setLoginError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/create-collector-login`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          collector_id: selected.id,
+          email: loginEmail,
+          temp_password: loginPassword,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setLoginError(json.error || 'Something went wrong');
+      } else {
+        setLoginSuccess(loginPassword);
+        // Refresh collector data so auth_id is visible
+        await fetchCollectors();
+        // Update the selected collector in state
+        setSelected(prev => ({ ...prev, auth_id: json.user_id }));
+      }
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setLoginSaving(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    setLoginSaving(true);
+    setLoginError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/reset-collector-password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          collector_id: selected.id,
+          new_password: loginPassword,
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        setLoginError(json.error || 'Something went wrong');
+      } else {
+        setLoginSuccess(loginPassword);
+      }
+    } catch (err) {
+      setLoginError(err.message);
+    } finally {
+      setLoginSaving(false);
+    }
   };
 
   const TIME_LABELS = {
@@ -108,6 +217,11 @@ export default function CollectorsPage() {
                     <span className={`badge badge-${c.employment_type==='employee'?'accent':'neutral'}`} style={{ fontSize:10 }}>{c.employment_type||'contractor'}</span>
                     {' '}
                     <span className={`badge badge-${c.status==='active'?'success':'neutral'}`} style={{ fontSize:10 }}>{c.status}</span>
+                    {' '}
+                    {c.auth_id
+                      ? <span className="badge badge-success" style={{ fontSize:10 }}>has login</span>
+                      : <span className="badge badge-neutral" style={{ fontSize:10 }}>no login</span>
+                    }
                   </div>
                 </div>
               </div>
@@ -189,7 +303,13 @@ export default function CollectorsPage() {
                 <div className="collector-avatar" style={{ width:48,height:48,fontSize:17 }}>{initials(selected.first_name, selected.last_name)}</div>
                 <div>
                   <div className="modal-title" style={{ marginBottom:2 }}>{fullName(selected)}</div>
-                  <div style={{ fontSize:11, color:'var(--muted)' }}>{selected.email}</div>
+                  <div style={{ fontSize:11, color:'var(--muted)', display:'flex', alignItems:'center', gap:6 }}>
+                    {selected.email}
+                    {selected.auth_id
+                      ? <span className="badge badge-success" style={{ fontSize:10 }}>login active</span>
+                      : <span className="badge badge-neutral" style={{ fontSize:10 }}>no login</span>
+                    }
+                  </div>
                 </div>
               </div>
               <button className="btn-ghost" onClick={()=>setSelected(null)} style={{ padding:'4px 8px' }}><X size={14} /></button>
@@ -238,7 +358,35 @@ export default function CollectorsPage() {
                     <input className="nura-input" value={editForm.abn||''} onChange={e=>setEditForm(p=>({...p,abn:e.target.value}))} />
                   </div>
                 </div>
-                <div style={{ display:'flex', gap:10, marginTop:20, justifyContent:'flex-end' }}>
+
+                {/* Login management row */}
+                <div style={{ marginTop:20, paddingTop:16, borderTop:'1px solid var(--border)' }}>
+                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:10 }}>App Login</div>
+                  <div style={{ display:'flex', gap:8 }}>
+                    {!selected.auth_id && (
+                      <button
+                        type="button"
+                        className="btn-mint"
+                        style={{ fontSize:12, padding:'6px 14px' }}
+                        onClick={() => openLoginModal('create')}
+                      >
+                        <LogIn size={12} /> Create Login
+                      </button>
+                    )}
+                    {selected.auth_id && (
+                      <button
+                        type="button"
+                        className="btn-ghost"
+                        style={{ fontSize:12, padding:'6px 14px', display:'flex', alignItems:'center', gap:6 }}
+                        onClick={() => openLoginModal('reset')}
+                      >
+                        <KeyRound size={12} /> Reset Password
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display:'flex', gap:10, marginTop:16, justifyContent:'flex-end' }}>
                   <button type="button" className="btn-ghost" onClick={()=>setSelected(null)}>Cancel</button>
                   <button type="submit" className="btn-mint" disabled={saving}>{saving?'Saving…':'Save Changes'}</button>
                 </div>
@@ -270,6 +418,123 @@ export default function CollectorsPage() {
                   <button className="btn-ghost" onClick={()=>setSelected(null)}>Close</button>
                 </div>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Create Login / Reset Password modal */}
+      {loginModal && (
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && closeLoginModal()}>
+          <div className="modal-card" style={{ maxWidth:440 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22 }}>
+              <div className="modal-title" style={{ marginBottom:0 }}>
+                {loginModal === 'create' ? 'Create App Login' : 'Reset Password'}
+              </div>
+              <button className="btn-ghost" onClick={closeLoginModal} style={{ padding:'4px 8px' }}><X size={14} /></button>
+            </div>
+
+            {/* Success state */}
+            {loginSuccess ? (
+              <div>
+                <div style={{ padding:'16px', marginBottom:16, background:'rgba(52,211,153,0.08)', border:'1px solid rgba(52,211,153,0.25)', borderRadius:10 }}>
+                  <div style={{ fontSize:13, fontWeight:600, color:'var(--success)', marginBottom:6 }}>
+                    {loginModal === 'create' ? 'Login created!' : 'Password updated!'}
+                  </div>
+                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:12 }}>
+                    Share this temporary password with the collector. They can change it after logging in.
+                  </div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <input
+                      className="nura-input"
+                      readOnly
+                      value={loginSuccess}
+                      style={{ fontFamily:'monospace', fontSize:14, letterSpacing:'0.05em', flex:1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{ padding:'8px 12px', flexShrink:0 }}
+                      onClick={async () => {
+                        await navigator.clipboard.writeText(loginSuccess);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied ? <Check size={14} style={{ color:'var(--success)' }} /> : <Copy size={14} />}
+                    </button>
+                  </div>
+                </div>
+                <div style={{ display:'flex', justifyContent:'flex-end' }}>
+                  <button className="btn-mint" onClick={closeLoginModal}>Done</button>
+                </div>
+              </div>
+            ) : (
+              <form onSubmit={loginModal === 'create' ? handleCreateLogin : handleResetPassword}>
+                {loginModal === 'create' && (
+                  <div style={{ marginBottom:14 }}>
+                    <label className="nura-label">Email *</label>
+                    <input
+                      className="nura-input"
+                      type="email"
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      required
+                    />
+                  </div>
+                )}
+
+                <div style={{ marginBottom:20 }}>
+                  <label className="nura-label">{loginModal === 'create' ? 'Temporary Password' : 'New Password'}</label>
+                  <div style={{ display:'flex', gap:8 }}>
+                    <input
+                      className="nura-input"
+                      type="text"
+                      value={loginPassword}
+                      onChange={e => setLoginPassword(e.target.value)}
+                      required
+                      style={{ fontFamily:'monospace', flex:1 }}
+                    />
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{ padding:'8px 12px', flexShrink:0 }}
+                      onClick={copyPassword}
+                      title="Copy password"
+                    >
+                      {copied ? <Check size={14} style={{ color:'var(--success)' }} /> : <Copy size={14} />}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-ghost"
+                      style={{ padding:'8px 12px', flexShrink:0, fontSize:11 }}
+                      onClick={() => { setLoginPassword(generatePassword()); setCopied(false); }}
+                      title="Generate new password"
+                    >
+                      ↺
+                    </button>
+                  </div>
+                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:5 }}>
+                    Auto-generated 12-character password. You can edit it or regenerate.
+                  </div>
+                </div>
+
+                {loginError && (
+                  <div style={{ padding:'10px 14px', marginBottom:14, background:'rgba(244,67,54,0.08)', border:'1px solid rgba(244,67,54,0.2)', borderRadius:8, color:'var(--danger)', fontSize:12 }}>
+                    {loginError}
+                  </div>
+                )}
+
+                <div style={{ display:'flex', gap:10, justifyContent:'flex-end' }}>
+                  <button type="button" className="btn-ghost" onClick={closeLoginModal}>Cancel</button>
+                  <button type="submit" className="btn-mint" disabled={loginSaving}>
+                    {loginSaving
+                      ? (loginModal === 'create' ? 'Creating…' : 'Updating…')
+                      : (loginModal === 'create' ? 'Create Login' : 'Reset Password')
+                    }
+                  </button>
+                </div>
+              </form>
             )}
           </div>
         </div>
